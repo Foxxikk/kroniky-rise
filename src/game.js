@@ -336,6 +336,60 @@ export class Game {
     }
     return out;
   }
+  /**
+   * Formace podle nakreslené čáry (body mapy): jednotky se rozestaví rovnoměrně podél čáry, čelem kolmo od místa,
+   * odkud přicházejí. Když je čára krátká, stojí ve více řadách za sebou.
+   */
+  orderLine(ids, pts, team = TEAM.PLAYER) {
+    const units = ids.map((id) => this.get(id)).filter((u) => u && u.kind === 'unit' && u.team === team);
+    if (!units.length || !pts || pts.length < 2) return false;
+    const seg = [];
+    let L = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      if (d < 1e-4) continue;
+      seg.push({ a: pts[i - 1], b: pts[i], d, L0: L });
+      L += d;
+    }
+    if (L < 0.6 || !seg.length) return false;
+    const at = (s) => {
+      let k = seg.findIndex((q) => s <= q.L0 + q.d);
+      if (k < 0) k = seg.length - 1;
+      const q = seg[k], t = Math.max(0, Math.min(1, (s - q.L0) / q.d));
+      return [q.a[0] + (q.b[0] - q.a[0]) * t, q.a[1] + (q.b[1] - q.a[1]) * t];
+    };
+    const p0 = pts[0], p1 = pts[pts.length - 1];
+    let dx = p1[0] - p0[0], dz = p1[1] - p0[1];
+    const dl = Math.hypot(dx, dz) || 1;
+    dx /= dl; dz /= dl;
+    let nx = -dz, nz = dx;
+    // čelem pryč od místa, odkud jednotky přicházejí
+    let cx = 0, cz = 0;
+    for (const u of units) { cx += u.x; cz += u.z; }
+    cx /= units.length; cz /= units.length;
+    const mid = at(L / 2);
+    if ((cx - mid[0]) * nx + (cz - mid[1]) * nz > 0) { nx = -nx; nz = -nz; }
+    const face = Math.atan2(nx, nz);
+    const sp = 0.9;
+    const n = units.length;
+    const perRow = Math.max(1, Math.min(n, Math.floor(L / sp) + 1));
+    const rows = Math.ceil(n / perRow);
+    // přední řada = jednotky nejblíž čáře (nejvíc „vepředu“), v řadě podle pořadí podél čáry
+    const byFront = units.slice().sort((a, b) => (b.x * nx + b.z * nz) - (a.x * nx + a.z * nz));
+    for (let r = 0; r < rows; r++) {
+      const row = byFront.slice(r * perRow, r * perRow + perRow).sort((a, b) => (a.x * dx + a.z * dz) - (b.x * dx + b.z * dz));
+      const cnt = row.length;
+      row.forEach((u, k) => {
+        const s = cnt === 1 ? L / 2 : (k / (cnt - 1)) * L;
+        let [x, z] = at(s);
+        x -= nx * r * sp; z -= nz * r * sp;
+        if (!this.pf.free(Math.floor(x), Math.floor(z))) { const p = this.pf.nearestFree(x, z, 4); if (p) { x = p[0] + 0.5; z = p[1] + 0.5; } }
+        this.order(u, { type: 'move', x, z, face });
+      });
+    }
+    this.event('order', { x: mid[0], z: mid[1], kind: 'move', team, unit: units[0] });
+    return true;
+  }
   /** Dělník(ci) postaví budovu. Suroviny se strhnou hned, při zrušení se vrátí. */
   orderBuild(ids, type, x, z, team = TEAM.PLAYER) {
     const d = BUILDINGS[type];
@@ -532,7 +586,7 @@ export class Game {
     switch (o.type) {
       case 'idle': this.doIdle(u, dt); break;
       case 'hold': this.doIdle(u, dt, true); break;
-      case 'move': if (this.moveTo(u, o.x, o.z, dt)) u.order = { type: 'idle' }; break;
+      case 'move': if (this.moveTo(u, o.x, o.z, dt)) { if (o.face != null) u.facing = o.face; u.order = { type: 'idle' }; } break;
       case 'follow': {
         const t = this.get(o.target);
         if (!t) { u.order = { type: 'idle' }; break; }

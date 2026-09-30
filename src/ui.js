@@ -6,6 +6,12 @@ const FONT = 'Nunito, "Segoe UI", system-ui, sans-serif';
 export const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 const costText = (c) => [c.gold ? `${c.gold}🪙` : '', c.wood ? `${c.wood}🪵` : ''].filter(Boolean).join(' ');
 
+/** VR tlačítka navíc: velitelský pohled a skok k poplachu. */
+function xrExtras(app, btn) {
+  if (!app.xr) return;
+  btn({ id: 'battle', icon: app.battle ? '🗺' : '👁', label: app.battle ? 'Zpět ke stolu' : 'Do bitvy', desc: app.battle ? 'Vrátí tě k válečnému stolu.' : 'Staneš přímo na bojišti mezi svými jednotkami (sleduje hrdinu).', action: () => app.toggleBattle() });
+  if (app.recentAlert()) btn({ id: 'alert', icon: '⚠', label: 'K poplachu', desc: app.battle ? 'Přenese tě k místu útoku.' : 'Přiblíží místo útoku na stole.', action: () => app.jumpToAlert() });
+}
 /** Co ukázat na velitelské kartě podle výběru. */
 export function buildCard(app) {
   const g = app.game;
@@ -20,6 +26,7 @@ export function buildCard(app) {
     btn({ id: 'selIdle', icon: '💤', label: 'Nečinní dělníci', hot: 'F1', action: () => app.selectAll('idleWorkers') });
     btn({ id: 'selHero', icon: '👑', label: 'Hrdina', hot: 'F3', action: () => app.selectAll('hero'), disabled: !g.hero(0) });
     btn({ id: 'selTh', icon: '🏰', label: 'Radnice', hot: 'F4', action: () => app.selectAll('townhall') });
+    xrExtras(app, btn);
     return card;
   }
   if (!own.length) {
@@ -73,6 +80,7 @@ export function buildCard(app) {
     if (!(workers.length && workers.length === units.length)) btn({ id: 'amove', icon: '🗡', label: 'Útočný pochod', hot: 'A', desc: 'Jdou na místo a útočí na vše po cestě.', active: app.attackMoveArmed, action: () => app.armAttackMove() });
     btn({ id: 'stop', icon: '✋', label: 'Stůj', hot: 'S', desc: 'Zastaví jednotky.', action: () => app.command('stop') });
     if (!workers.length || workers.length < units.length) btn({ id: 'hold', icon: '⛨', label: 'Drž pozici', hot: 'D', desc: 'Nehnou se z místa, bojují jen v dosahu.', action: () => app.command('hold') });
+    xrExtras(app, btn);
     if (app.xr) btn({ id: 'desel', icon: '✖', label: 'Zrušit výběr', desc: 'Nic nebude vybráno.', action: () => app.deselect() });
     return card;
   }

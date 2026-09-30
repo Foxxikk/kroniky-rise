@@ -15,7 +15,8 @@ const W = MAP_W, H = MAP_H;
 const VR_SCALE = 0.027; // 48 políček ≈ 1,3 m
 const TABLE_TOP = 0.77;
 const BOARD_BOTTOM = 1.62; // tloušťka podstavce desky (v políčkách)
-const SCALE_MIN = 0.012, SCALE_MAX = 0.14;
+const SCALE_MIN = 0.012, SCALE_MAX = 0.45;
+const BATTLE_SCALE = 0.3; // „Do bitvy“: 1 políčko = 30 cm, hrdina ti sahá po kolena
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _q = new THREE.Quaternion();
 const _ray = new THREE.Ray(), _box = new THREE.Box3();
 const BH = { townhall: 3.3, tower: 3.4, altar: 2.0, barracks: 2.0, stable: 1.9, farm: 1.2 };
@@ -93,6 +94,8 @@ export class App {
     this.placing = this.casting = null;
     this.attackMoveArmed = false;
     this.ended = false;
+    this.battle = false; this.battleHero = null; this.boardAnim = null;
+    if (this.xr) this.env.setMode(this.mode);
     const th = this.game.buildings.find((b) => b.team === 0);
     this.cam.x = th.cx + 4; this.cam.z = th.cz - 3;
     this.selectAll('townhall');
@@ -141,6 +144,9 @@ export class App {
     this.openMenu('intro');
   }
   onXREnd() {
+    this.battle = false; this.battleHero = null; this.boardAnim = null;
+    if (this.fadeMesh) this.fadeMesh.visible = false;
+    if (this.orb) this.orb.visible = false;
     this.mode = 'desktop';
     this.env.setMode('desktop');
     this.card.mesh.visible = this.banner.mesh.visible = this.menu.mesh.visible = false;
@@ -344,7 +350,7 @@ export class App {
       if (h) {
         const t = A.target === 'ally' ? (target?.kind === 'unit' && target.team === 0 ? target : null) : null;
         if (A.target === 'ally' && !t) { this.deny('Vyber spojeneckou jednotku'); return true; }
-        if (g.castAbility(h, this.casting, x, z, t)) this.sfx.play('order');
+        if (g.castAbility(h, this.casting, x, z, t)) { this.sfx.play('order'); this.launchOrb(A.target === 'ally' ? t.x : x, A.target === 'ally' ? t.z : z, this.casting); }
       }
       this.casting = null;
       return true;
@@ -438,6 +444,12 @@ export class App {
         }
       } else if (d.b === 2) {
         if (this.placing || this.casting || this.attackMoveArmed) { this.placing = this.casting = null; this.attackMoveArmed = false; return; }
+        const army = this.ownUnitsSel().filter((u) => !u.def.worker);
+        if (moved > 12 && army.length >= 2) {
+          const a = this.groundAt(d.x, d.y), b = this.groundAt(e.clientX, e.clientY);
+          this.world.showLine(null);
+          if (a && b && this.game.orderLine(army.map((u) => u.id), [a, b])) { this.sfx.play('order'); return; }
+        }
         const h = this.mouseHit(e.clientX, e.clientY);
         if (h) this.orderAt(h.x, h.z, h.ent, e.shiftKey);
       }
@@ -552,6 +564,11 @@ export class App {
       sr.visible = false;
       void a; void b;
     } else document.getElementById('selbox').style.display = 'none';
+    // náhled formace při tažení pravým tlačítkem
+    if (d && d.b === 2 && Math.hypot(this.mouse.x - d.x, this.mouse.y - d.y) > 12 && this.ownUnitsSel().some((u) => !u.def.worker)) {
+      const a = this.groundAt(d.x, d.y), b = this.groundAt(this.mouse.x, this.mouse.y);
+      if (a && b) this.world.showLine([a, b], this.ownUnitsSel().filter((u) => !u.def.worker).length);
+    } else if (!this.pointers.some((p) => p.mode === 'line')) this.world.showLine(null);
     this.renderer.domElement.style.cursor = this.placing || this.casting || this.attackMoveArmed ? 'crosshair' : this.hover && this.hover.team === 1 && this.selection.size ? 'crosshair' : 'default';
   }
   /** Ghost stavby, kruh kouzla, kurzor – podle bodu pod ukazatelem. */
@@ -780,7 +797,7 @@ export class App {
     }
     // deska: přímý dotek (ruka těsně nad stolem) nebo paprsek
     const map = this.world.map;
-    if (ptr.isHand && ptr.hasJoints) {
+    if (ptr.isHand && ptr.hasJoints && this.world.board.scale.x < 0.08) {
       const L = map.worldToLocal(_v.copy(P));
       if (L.x > -0.5 && L.x < W + 0.5 && L.z > -0.5 && L.z < H + 0.5 && L.y > -1 && L.y < 2.6) {
         const r = this.pickRay(_v2.copy(P).addScaledVector(this.upWorld(), 0.12), _v3.copy(this.upWorld()).negate());
@@ -841,6 +858,15 @@ export class App {
     if (m === 'pan') {
       if (ptr.panHandle != null) { this.handleObjs[ptr.panHandle].holder = null; ptr.panHandle = null; }
       this.snapshotPan();
+      return;
+    }
+    if (m === 'line') {
+      const pts = this.linePts || [];
+      if (ptr.hover?.type === 'board') pts.push([ptr.hover.x, ptr.hover.z]);
+      this.world.showLine(null);
+      if (this.game.orderLine(this.lineIds, pts)) { this.sfx.play('order'); this.sfx.play('ack', { vol: 0.5 }); this.haptic(ptr, 0.4, 50); }
+      else if (pts.length) this.orderAt(pts[pts.length - 1][0], pts[pts.length - 1][1], null);
+      this.linePts = null;
       return;
     }
     if (m === 'brush') {
@@ -977,7 +1003,7 @@ export class App {
     // taktický čas: karta otevřená → zpomalit
     this.slowmo = this.settings.slowmo && !!this.cardShown && this.cardHand?.isHand;
     // madla
-    this.handles.visible = !this.menuOpen;
+    this.handles.visible = !this.menuOpen && !this.battle;
     if (this.handles.visible) {
       this.placeHandles();
       for (const h of this.handleObjs) {
@@ -1014,10 +1040,23 @@ export class App {
         const moved = this.pointerPos(ptr).distanceTo(s.wp);
         const movedMap = h?.type === 'board' ? Math.hypot(h.x - s.x, h.z - s.z) : 0;
         if ((s.touch && moved > 0.022) || (!s.touch && movedMap > 1.1)) {
-          ptr.mode = 'brush';
-          this.brushSet = new Set();
+          // akční ruka s vybranou armádou = kreslení formace, jinak (a levou rukou vždy) štětec výběru
+          const army = this.ownUnitsSel().filter((u) => !u.def.worker);
+          if (this.isActionHand(ptr) && army.length >= 2 && !(s.ent && s.ent.team === 0)) {
+            ptr.mode = 'line';
+            this.linePts = [[s.x, s.z]];
+            this.lineIds = army.map((u) => u.id);
+          } else {
+            ptr.mode = 'brush';
+            this.brushSet = new Set();
+          }
           this.sfx.play('grab');
         }
+      }
+      if (ptr.mode === 'line' && h?.type === 'board') {
+        const last = this.linePts[this.linePts.length - 1];
+        if (Math.hypot(h.x - last[0], h.z - last[1]) > 0.35 && this.linePts.length < 250) { this.linePts.push([h.x, h.z]); if (this.linePts.length % 4 === 0) this.haptic(ptr, 0.08, 8); }
+        this.world.showLine([...this.linePts, [h.x, h.z]], this.lineIds.length);
       }
       if (ptr.mode === 'brush' && h?.type === 'board') {
         const r = Math.max(0.9, 0.028 / this.world.board.scale.x);
@@ -1043,10 +1082,157 @@ export class App {
       const e = aimH.ent, sel = this.selectedEnts(), own = sel.length && sel[0].team === 0 && sel[0].kind === 'unit';
       cur.material.color.set(this.attackMoveArmed ? '#ff7a5a' : !own ? '#ffffff' : e && e.team === 1 ? '#ff5a4a' : e && (e.kind === 'mine' || e.kind === 'tree') ? '#ffd84a' : e && e.team === 0 ? '#6dff7a' : '#9fffc0');
     } else cur.visible = false;
+    // velitelský pohled: sleduj hrdinu (přenesení se zatměním, když se vzdálí)
+    if (this.battle) this.followBattle(head);
+    this.updateFade(dt, head);
+    this.updateOrb(dt);
     // banner a menu
     this.placeBanner(head);
     if (this.menuOpen) this.drawMenu(menuHover);
     this.handsFx.update(dt);
+  }
+  /** Akční ruka = ta, na které není karta (pravá, u leváků levá). */
+  isActionHand(ptr) { return ptr.inputSource?.handedness === (this.settings.lefty ? 'left' : 'right') || ptr.inputSource?.handedness === 'none'; }
+  /** Otočí desku kolem svislé osy: u stolu kolem středu desky, v bitvě kolem hlavy hráče. */
+  rotateBoard(a) {
+    const b = this.world.board;
+    if (this.battle) {
+      const head = new THREE.Vector3().setFromMatrixPosition(this.renderer.xr.getCamera().matrixWorld);
+      const rel = b.position.clone().sub(head); rel.y = 0;
+      rel.applyAxisAngle(new THREE.Vector3(0, 1, 0), a);
+      b.position.set(head.x + rel.x, b.position.y, head.z + rel.z);
+    }
+    b.rotation.y += a;
+  }
+  // ---- velitelský pohled „Do bitvy“
+  toggleBattle() { if (this.battle) this.exitBattle(); else this.enterBattle(); }
+  battleFocus() {
+    const g = this.game;
+    const sel = this.ownUnitsSel();
+    const h = sel.find((u) => u.def.hero) || (!sel.length && g.hero(0));
+    if (h) return { x: h.x, z: h.z, hero: h.id };
+    if (sel.length) return { x: sel.reduce((a, u) => a + u.x, 0) / sel.length, z: sel.reduce((a, u) => a + u.z, 0) / sel.length };
+    const b = this.selectedEnts().find((e) => e.kind === 'building') || g.buildings.find((e) => e.team === 0);
+    return b ? { x: b.cx, z: b.cz + b.h / 2 + 2 } : null;
+  }
+  enterBattle(focus = null) {
+    if (!this.xr) return;
+    const f = focus || this.battleFocus();
+    if (!f) return;
+    const b = this.world.board;
+    if (!this.battle) this.tableXf = { p: b.position.clone(), r: b.rotation.y, s: b.scale.x };
+    this.battle = true;
+    this.battleHero = f.hero || null;
+    this.sfx.play('levelup', { vol: 0.5 });
+    this.fadeTo(() => { this.placeBattle(f.x, f.z); this.env.setMode(this.mode === 'ar' ? 'ar' : 'battle'); });
+  }
+  exitBattle() {
+    if (!this.battle) return;
+    this.battle = false;
+    this.battleHero = null;
+    const t = this.tableXf;
+    this.fadeTo(() => {
+      const b = this.world.board;
+      if (t) { b.position.copy(t.p); b.rotation.y = t.r; b.scale.setScalar(t.s); } else this.placedXR = false;
+      this.env.setMode(this.mode);
+    });
+  }
+  /** Postav bod (x, z) mapy kousek před hráče, zem desky na podlahu. */
+  placeBattle(x, z) {
+    const cam = this.renderer.xr.getCamera();
+    cam.updateMatrixWorld();
+    const head = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(_q)); f.y = 0;
+    if (f.lengthSq() < 0.01) f.set(0, 0, -1);
+    f.normalize();
+    const b = this.world.board;
+    b.scale.setScalar(BATTLE_SCALE);
+    const want = head.clone().addScaledVector(f, 1.1);
+    const local = new THREE.Vector3(x - W / 2, 0, z - H / 2).multiplyScalar(BATTLE_SCALE).applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rotation.y);
+    b.position.set(want.x - local.x, 0, want.z - local.z);
+  }
+  followBattle(head) {
+    const h = this.battleHero && this.game.get(this.battleHero);
+    if (!h || this.fade?.phase) return;
+    const L = this.world.map.worldToLocal(head.clone());
+    if (Math.hypot(h.x - L.x, h.z - L.z) > 9 && !this.pointers.some((p) => p.mode)) this.fadeTo(() => this.placeBattle(h.x, h.z));
+  }
+  /** Poplach: u stolu přiblíží místo, v bitvě tě tam přenese. */
+  jumpToAlert() {
+    const al = [...this.game.messages].reverse().find((m) => m.at && m.kind === 'alert');
+    if (!al) return;
+    if (this.battle) { this.battleHero = null; this.fadeTo(() => this.placeBattle(al.at.x, al.at.z)); return; }
+    const b = this.world.board;
+    const center = this.env.tent.position.clone(); center.y = b.position.y;
+    const s = Math.min(SCALE_MAX, Math.max(b.scale.x, VR_SCALE * 1.8));
+    const local = new THREE.Vector3(al.at.x - W / 2, 0, al.at.z - H / 2).multiplyScalar(s).applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rotation.y);
+    this.boardAnim = { p0: b.position.clone(), s0: b.scale.x, p1: new THREE.Vector3(center.x - local.x, b.position.y + BOARD_BOTTOM * (s - b.scale.x), center.z - local.z), s1: s, t: 0 };
+  }
+  recentAlert() { const al = [...(this.game?.messages || [])].reverse().find((m) => m.at && m.kind === 'alert'); return al && this.game.time - al.t < 15 ? al : null; }
+  // ---- zatmění při přenesení (ochrana proti nevolnosti)
+  fadeTo(cb) {
+    if (!this.xr) { cb(); return; }
+    if (!this.fadeMesh) {
+      this.fadeMesh = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 12), new THREE.MeshBasicMaterial({ color: '#000000', side: THREE.BackSide, transparent: true, opacity: 0, depthTest: false, depthWrite: false }));
+      this.fadeMesh.renderOrder = 999;
+      this.scene.add(this.fadeMesh);
+    }
+    this.fade = { phase: 1, t: 0, cb };
+  }
+  updateFade(dt, head) {
+    if (this.boardAnim) {
+      const A = this.boardAnim, b = this.world.board;
+      A.t = Math.min(1, A.t + dt * 2.5);
+      const k = A.t * A.t * (3 - 2 * A.t);
+      b.position.lerpVectors(A.p0, A.p1, k);
+      b.scale.setScalar(A.s0 + (A.s1 - A.s0) * k);
+      if (A.t >= 1) this.boardAnim = null;
+    }
+    const F = this.fade, m = this.fadeMesh;
+    if (!m) return;
+    m.position.copy(head);
+    if (!F?.phase) { m.visible = false; return; }
+    m.visible = true;
+    F.t += dt;
+    if (F.phase === 1) { m.material.opacity = Math.min(1, F.t / 0.16); if (F.t >= 0.16) { F.cb?.(); F.phase = 2; F.t = 0; } }
+    else { m.material.opacity = Math.max(0, 1 - F.t / 0.28); if (F.t >= 0.28) F.phase = 0; }
+  }
+  // ---- kouzlo v dlani: koule v akční ruce, po seslání letí na cíl
+  launchOrb(x, z, ab) {
+    if (!this.xr || !this.orb) return;
+    const to = this.world.map.localToWorld(new THREE.Vector3(x, 0.4, z));
+    this.orbFlight = { from: this.orb.position.clone(), to, t: 0, ab };
+  }
+  updateOrb(dt) {
+    if (!this.orb) {
+      const tex = this.world.sparkPool[0]?.material.map;
+      this.orb = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: '#9fd8ff', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+      this.orb.renderOrder = 50;
+      this.orbCore = new THREE.Mesh(new THREE.IcosahedronGeometry(0.012, 1), new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }));
+      this.orb.add(this.orbCore);
+      this.scene.add(this.orb);
+    }
+    const t = performance.now() / 1000;
+    if (this.orbFlight) {
+      const F = this.orbFlight;
+      F.t += dt / 0.3;
+      this.orb.visible = true;
+      this.orb.position.lerpVectors(F.from, F.to, Math.min(1, F.t));
+      this.orb.position.y += Math.sin(Math.min(1, F.t) * Math.PI) * 0.12;
+      if (F.t >= 1) { this.orbFlight = null; this.hapticAll(0.6, 80); }
+      return;
+    }
+    const ptr = this.pointers.find((p) => this.isActionHand(p) && p.inputSource);
+    const A = this.casting && ABILITIES[this.casting];
+    this.orb.visible = !!(A && ptr);
+    if (!this.orb.visible) return;
+    const col = this.casting === 'heal' ? '#aaffc8' : '#9fd8ff';
+    this.orb.material.color.set(col);
+    this.orbCore.material.color.set(col).lerp(new THREE.Color('#ffffff'), 0.6);
+    const P = ptr.isHand && ptr.hasJoints ? ptr.pinchPoint : ptr.origin.clone().addScaledVector(ptr.dir, 0.08);
+    this.orb.position.copy(P).add(new THREE.Vector3(0, 0.035, 0));
+    this.orb.scale.setScalar(0.07 + Math.sin(t * 9) * 0.01);
+    if (Math.random() < 0.3) this.haptic(ptr, 0.05, 10);
   }
   checkPoke(ptr) {
     const panels = [this.menu, this.card].filter((p) => p.mesh.visible && !(p === this.card && this.cardHand === ptr));
@@ -1075,7 +1261,7 @@ export class App {
     const b = this.world.board;
     if (ptr.inputSource.handedness === 'right') {
       // pravá páčka: otáčení desky po krocích, nahoru/dolů zoom
-      if (Math.abs(x) > 0.7 && !ptr.snapLock) { ptr.snapLock = true; b.rotation.y -= Math.sign(x) * Math.PI / 6; }
+      if (Math.abs(x) > 0.7 && !ptr.snapLock) { ptr.snapLock = true; this.rotateBoard(-Math.sign(x) * Math.PI / 6); }
       if (Math.abs(x) < 0.3) ptr.snapLock = false;
       if (Math.abs(y) > 0.3) {
         const s0 = b.scale.x, s = THREE.MathUtils.clamp(s0 * (1 - y * dt * 1.2), SCALE_MIN, SCALE_MAX);
@@ -1087,9 +1273,21 @@ export class App {
       const B = gp.buttons || [];
       if (B[4]?.pressed && !ptr.aLock) { ptr.aLock = true; this.deselect(); } // A = zrušit výběr
       if (!B[4]?.pressed) ptr.aLock = false;
+      if (B[5]?.pressed && !ptr.bLock) { ptr.bLock = true; this.toggleBattle(); } // B = do bitvy / ke stolu
+      if (!B[5]?.pressed) ptr.bLock = false;
     } else {
-      // levá páčka: posun desky
-      if (Math.abs(x) > 0.2 || Math.abs(y) > 0.2) {
+      // levá páčka: posun desky (v bitvě krok se zatměním – žádný plynulý pohyb, kvůli nevolnosti)
+      if (this.battle) {
+        if (Math.hypot(x, y) > 0.8 && !ptr.stepLock) {
+          ptr.stepLock = true;
+          const cam = this.renderer.xr.getCamera();
+          const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(_q)); f.y = 0; f.normalize();
+          const r = new THREE.Vector3(-f.z, 0, f.x);
+          const d = f.multiplyScalar(-y).addScaledVector(r, x).normalize().multiplyScalar(1.2);
+          this.fadeTo(() => b.position.sub(d));
+        }
+        if (Math.hypot(x, y) < 0.3) ptr.stepLock = false;
+      } else if (Math.abs(x) > 0.2 || Math.abs(y) > 0.2) {
         const cam = this.renderer.xr.getCamera();
         const f = _v.set(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(_q)); f.y = 0; f.normalize();
         const r = _v2.set(-f.z, 0, f.x);
@@ -1106,6 +1304,19 @@ export class App {
     const b = this.world.board;
     const m = this.banner.mesh;
     m.visible = !this.menuOpen || this.menuOpen === 'pause';
+    if (this.battle) {
+      // v bitvě visí nápis před tebou nad bojištěm (pomalu se natáčí za pohledem)
+      const cam = this.renderer.xr.getCamera();
+      const f = _v.set(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(_q)); f.y = 0; f.normalize();
+      const target = head.clone().addScaledVector(f, 1.5); target.y = head.y + 0.45;
+      if (!this.bannerBattle) m.position.copy(target); else m.position.lerp(target, 0.03);
+      this.bannerBattle = true;
+      m.lookAt(head);
+      m.scale.setScalar(1);
+      this.banner.draw(this);
+      return;
+    }
+    this.bannerBattle = false;
     // nad protější hranou desky
     const loc = b.worldToLocal(head.clone());
     const dir = new THREE.Vector3(loc.x, 0, loc.z).normalize();

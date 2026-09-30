@@ -392,6 +392,18 @@ export class World {
     this.rallyFlag = new THREE.Mesh(flagGeo(TEAM_INFO[0].color), this.unitMat);
     this.rallyFlag.visible = false;
     this.map.add(this.rallyFlag);
+    // náhled nakreslené formace (čára + tečky budoucích míst)
+    this.lineGeo = new THREE.BufferGeometry();
+    this.lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(256 * 3), 3));
+    this.formLine = new THREE.Line(this.lineGeo, new THREE.LineBasicMaterial({ color: '#7dff8a', transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
+    this.formLine.renderOrder = 9; this.formLine.frustumCulled = false; this.formLine.visible = false;
+    this.map.add(this.formLine);
+    this.lineRibbon = new THREE.InstancedMesh(new THREE.CircleGeometry(0.16, 10).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#7dff8a', transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false }), 64);
+    this.lineRibbon.count = 0; this.lineRibbon.renderOrder = 9; this.lineRibbon.frustumCulled = false;
+    this.map.add(this.lineRibbon);
+    // poplachové majáky
+    this.beacons = [];
+    this.beaconGeo = new THREE.CylinderGeometry(0.45, 0.8, 9, 16, 1, true).translate(0, 4.5, 0);
     // dosah schopnosti
     this.aoe = new THREE.Mesh(new THREE.RingGeometry(0.93, 1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false }));
     this.aoe.visible = false; this.aoe.renderOrder = 6;
@@ -489,6 +501,7 @@ export class World {
         break;
       }
       case 'rally': this.pulse(d.x, d.z, '#9fd0ff', 0.9, 0.2, 0.45); break;
+      case 'msg': if (d.kind === 'alert' && d.at) this.beacon(d.at.x, d.at.z); break;
       case 'treeFall': this.spark(d.x, 0.5, d.z, '#6aa04a', 8, 1.5, 0.3, 0.7, 0.6); break;
     }
   }
@@ -798,7 +811,47 @@ export class World {
     this.ghostMat.color.set(ok ? '#7dff8a' : '#ff6a5a');
     this.ghostTiles.material.color.set(ok ? '#4dff6a' : '#ff4a3a');
   }
+  /** Náhled formace: pts = body čáry v mapě, n = počet jednotek (tečky rovnoměrně po čáře). */
+  showLine(pts, n = 0) {
+    if (!pts || pts.length < 2) { this.formLine.visible = false; this.lineRibbon.count = 0; return; }
+    const arr = this.lineGeo.attributes.position.array;
+    const m = Math.min(256, pts.length);
+    for (let i = 0; i < m; i++) { arr[i * 3] = pts[i][0]; arr[i * 3 + 1] = 0.12; arr[i * 3 + 2] = pts[i][1]; }
+    this.lineGeo.setDrawRange(0, m);
+    this.lineGeo.attributes.position.needsUpdate = true;
+    this.formLine.visible = true;
+    // tečky
+    let L = 0; const acc = [0];
+    for (let i = 1; i < m; i++) { L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); acc.push(L); }
+    const k = Math.min(64, n, Math.floor(L / 0.9) + 1);
+    for (let j = 0; j < k; j++) {
+      const sT = k === 1 ? L / 2 : (j / (k - 1)) * L;
+      let i = acc.findIndex((v) => v >= sT); if (i < 1) i = 1;
+      const t = (sT - acc[i - 1]) / Math.max(1e-4, acc[i] - acc[i - 1]);
+      _m.compose(_p.set(pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, 0.1, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t), _q.identity(), _s.set(1, 1, 1));
+      this.lineRibbon.setMatrixAt(j, _m);
+    }
+    this.lineRibbon.count = k;
+    this.lineRibbon.instanceMatrix.needsUpdate = true;
+  }
+  beacon(x, z) {
+    if (this.beacons.some((b) => Math.hypot(b.x - x, b.z - z) < 4 && b.life > 2)) return;
+    const m = new THREE.Mesh(this.beaconGeo, new THREE.MeshBasicMaterial({ color: '#ff4a2a', transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false }));
+    m.position.set(x, 0, z);
+    m.renderOrder = 11;
+    this.map.add(m);
+    this.beacons.push({ m, x, z, life: 8 });
+    this.pulse(x, z, '#ff4a2a', 0.5, 4, 1.2);
+  }
   syncFx(dt) {
+    this.beacons = this.beacons.filter((b) => {
+      b.life -= dt;
+      if (b.life <= 0) { this.map.remove(b.m); b.m.material.dispose(); return false; }
+      const t = performance.now() / 1000;
+      b.m.material.opacity = Math.min(1, b.life / 2) * (0.35 + Math.sin(t * 6) * 0.15);
+      b.m.scale.set(1 + Math.sin(t * 3) * 0.1, Math.min(1, (8 - b.life) * 4), 1 + Math.sin(t * 3) * 0.1);
+      return true;
+    });
     const keep = [];
     for (const p of this.sparks) {
       p.life -= dt;

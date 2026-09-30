@@ -65,6 +65,20 @@ Levé tlačítko výběr (obdélník, dvojklik = stejný typ) · pravé rozkaz �
 
 ---
 
+## Novinky v3 – VR na prvním místě
+
+- **Do bitvy (velitelský pohled):** tlačítko 👁 na kartě (nebo **B** na ovladači) tě přenese přímo na bojiště –
+  mapa se zvětší na měřítko 1 políčko = 30 cm, zem je na tvé podlaze a hrdina ti sahá po kolena. Můžeš fyzicky chodit mezi
+  vojáky a velet jim zblízka. Pohled drží hrdinu: když odběhne, přeneseš se k němu přes krátké zatmění (žádné plynulé
+  posouvání kamery = žádná nevolnost). Levá páčka = krok se zatměním, pravá = otočení po 30°. 🗺 **Zpět ke stolu** tě vrátí.
+- **Kreslení formace:** s vybranou armádou táhni **pravou rukou** čáru po mapě – vojáci se na ni rovnoměrně rozestaví
+  čelem vpřed (při krátké čáře ve více řadách). Během tažení vidíš čáru i tečky budoucích míst. **Levou rukou** tažení
+  pořád funguje jako štětec výběru. Na PC totéž pravým tlačítkem tažením.
+- **Kouzlo v dlani:** když zvolíš kouzlo hrdiny, v akční ruce ti září koule (modrá hrom, zelená léčení), jemně vibruje,
+  a po štípnutí odletí na cíl.
+- **Poplachové majáky:** při útoku vyroste nad místem červený světelný sloup viditelný přes celý stůl a na kartě se objeví
+  ⚠ **K poplachu** – u stolu místo plynule přiblíží, v bitvě tě tam přenese.
+
 ## Novinky v2 – grafika na maximum
 
 - **Detailní CC0 modely KayKit místo vlastních kostiček:** Aliance Svítání jsou dobrodruzi (rytíř, lučištnice s kuší,

@@ -89,9 +89,19 @@ export class Env {
     this.tent = t;
     this.scene.add(t);
   }
+  sky() {
+    if (this._sky) return this._sky;
+    const c = document.createElement('canvas'); c.width = 2; c.height = 256;
+    const g = c.getContext('2d');
+    const gr = g.createLinearGradient(0, 0, 0, 256);
+    gr.addColorStop(0, '#5f8fd0'); gr.addColorStop(0.5, '#a9cdea'); gr.addColorStop(0.62, '#e8e2cf'); gr.addColorStop(1, '#6e8a5a');
+    g.fillStyle = gr; g.fillRect(0, 0, 2, 256);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.mapping = THREE.EquirectangularReflectionMapping;
+    return (this._sky = t);
+  }
   setMode(mode) {
     this.tent.visible = mode === 'vr';
-    this.scene.background = mode === 'ar' ? null : mode === 'vr' ? new THREE.Color('#1a1510') : this.bg;
+    this.scene.background = mode === 'ar' ? null : mode === 'vr' ? new THREE.Color('#1a1510') : mode === 'battle' ? this.sky() : this.bg;
     this.hemi.intensity = mode === 'vr' ? 0.9 : 0.95;
   }
 }

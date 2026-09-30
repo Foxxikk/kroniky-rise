@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Kroniky Říše – fantasy strategie pro VR / MR</title>
+  <meta name="description" content="Realtimová fantasy strategie pro Meta Quest 3: stav základnu, těž zlato a dřevo, veď armádu a hrdinu – rukama na válečném stole ve VR i na svém stole v MR." />
+  <meta name="theme-color" content="#141a2c" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M10 54 32 8l22 46z' fill='%233f74f0'/><path d='M22 54l10-22 10 22z' fill='%23ffd84a'/><circle cx='32' cy='20' r='5' fill='%23fff'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg: #151b2e; --bg2: #202a45; --edge: #c9a14a; --text: #fff; --dim: #aebbd8; --gold: #ffd84a; --blue: #3f74f0; --green: #3aa84a;
+      --font: "Nunito", "Segoe UI", system-ui, -apple-system, sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #141a2c; color: var(--text); font-family: var(--font); user-select: none; -webkit-user-select: none; }
+    #app canvas { display: block; touch-action: none; }
+    button { font-family: var(--font); }
+    #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 30;
+      background: radial-gradient(ellipse at 50% 15%, rgba(201,161,74,0.35), rgba(12,16,28,0.96) 70%), #0d111d; }
+    #start.hidden { display: none; }
+    .card { width: min(580px, 100%); max-height: 100%; overflow: auto; text-align: center; padding: 26px 24px 20px;
+      background: linear-gradient(var(--bg2), var(--bg)); border: 3px solid var(--edge); border-radius: 26px; box-shadow: 0 24px 60px rgba(0,0,0,0.6); }
+    h1 { margin: 2px 0 0; font-size: clamp(34px, 8vw, 54px); font-weight: 900; color: #ffe28a; text-shadow: 0 4px 0 #0c1222; letter-spacing: 0.5px; }
+    h2 { margin: 4px 0 12px; font-size: 34px; color: #ffe28a; }
+    .sub { margin: 4px 0 18px; color: var(--dim); font-size: 16px; font-weight: 700; }
+    .btns { display: grid; gap: 12px; }
+    button.big { font-size: 21px; font-weight: 900; color: #fff; cursor: pointer; padding: 14px 16px; border-radius: 18px; width: 100%;
+      border: 3px solid rgba(255,255,255,0.16); background: #2d3a60; box-shadow: 0 6px 0 rgba(0,0,0,0.35); transition: transform .08s, background .15s;
+      display: flex; flex-direction: column; align-items: center; gap: 3px; margin-top: 10px; }
+    button.big small { font-size: 14px; font-weight: 700; color: rgba(255,255,255,0.78); }
+    button.big:hover:not(:disabled) { background: #3b4c80; }
+    button.big:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0,0,0,0.35); }
+    button.big.vr { background: var(--blue); } button.big.vr:hover:not(:disabled) { background: #5585ee; }
+    button.big.mr { background: var(--green); } button.big.mr:hover:not(:disabled) { background: #4cc25c; }
+    button.big:disabled { background: #252d48; color: #6c7596; cursor: not-allowed; }
+    .row { display: flex; gap: 8px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+    .chip { cursor: pointer; padding: 8px 14px; border-radius: 999px; border: 2px solid #3d4a73; background: rgba(0,0,0,0.25); color: var(--dim); font-weight: 800; font-size: 15px; }
+    .chip.on { border-color: var(--gold); color: #fff; background: rgba(201,161,74,0.25); }
+    .note { margin-top: 14px; font-size: 13.5px; color: var(--dim); line-height: 1.5; font-weight: 700; }
+    .controls { margin-top: 12px; text-align: left; font-size: 13.5px; line-height: 1.6; color: var(--dim); background: rgba(0,0,0,0.25); border-radius: 14px; padding: 10px 14px; font-weight: 700; }
+    .controls b { color: #fff; }
+    details summary { cursor: pointer; margin-top: 12px; color: #ffe28a; font-weight: 800; }
+    /* ---- HUD (PC) */
+    #hud { display: none; }
+    #hud.on { display: block; }
+    #hud-res { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 18px; padding: 8px 20px; z-index: 10;
+      background: rgba(16,22,38,0.88); border: 2px solid var(--edge); border-radius: 999px; font-size: 19px; font-weight: 900; pointer-events: none; }
+    #hud-res .g { color: var(--gold); } #hud-res .w { color: #c8f08a; } #hud-res .bad { color: #ff8a7a; } #hud-res .t { color: var(--dim); font-weight: 800; }
+    #hud-menu { position: fixed; top: 10px; right: 10px; z-index: 10; padding: 8px 14px; border-radius: 12px; border: 2px solid #3d4a73; background: rgba(16,22,38,0.88); color: #fff; font-weight: 900; cursor: pointer; }
+    #hud-msgs { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 10; display: grid; gap: 6px; justify-items: center; pointer-events: none; }
+    #hud-msgs .m { padding: 6px 16px; border-radius: 999px; background: rgba(0,0,0,0.6); font-weight: 800; font-size: 16px; }
+    #hud-msgs .alert { color: #ff9a7a; } #hud-msgs .good { color: #9fffa8; } #hud-msgs .deny { color: #ffcf8a; }
+    #hud-bottom { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; gap: 10px; padding: 10px; z-index: 10; pointer-events: none; }
+    #hud-bottom > * { pointer-events: auto; }
+    #hud-mini { width: 190px; height: 190px; border: 3px solid var(--edge); border-radius: 12px; background: #000; image-rendering: pixelated; cursor: pointer; }
+    #hud-sel { flex: 1; min-width: 0; min-height: 110px; display: flex; gap: 12px; align-items: center; padding: 10px 14px; background: rgba(16,22,38,0.9); border: 2px solid #3d4a73; border-radius: 16px; }
+    #hud-sel .por { position: relative; width: 84px; height: 84px; flex: none; border: 3px solid; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 46px; background: rgba(255,255,255,0.06); overflow: hidden; }
+    #hud-sel .por i { position: absolute; left: 0; bottom: 8px; height: 7px; background: #4ccf5a; }
+    #hud-sel .por b { position: absolute; left: 0; bottom: 0; height: 6px; background: #4a8dff; }
+    #hud-sel .ti { font-size: 21px; font-weight: 900; color: #ffe9a8; }
+    #hud-sel .su { font-size: 15px; font-weight: 700; color: #cfd8ee; margin-top: 3px; }
+    #hud-sel .hint { font-size: 13px; color: var(--dim); margin-top: 4px; }
+    #hud-sel .q { display: flex; gap: 6px; margin-top: 6px; }
+    #hud-sel .q span { position: relative; width: 38px; height: 34px; border-radius: 8px; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 20px; overflow: hidden; }
+    #hud-sel .q span.cur { outline: 2px solid #9fd0ff; }
+    #hud-sel .q i { position: absolute; left: 0; bottom: 0; height: 4px; background: #9fd0ff; }
+    #hud-card { display: grid; grid-template-columns: repeat(4, 74px); gap: 6px; padding: 8px; background: rgba(16,22,38,0.9); border: 2px solid #3d4a73; border-radius: 16px; min-height: 110px; align-content: start; }
+    .cb { position: relative; width: 74px; height: 74px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.1); color: #fff; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; overflow: hidden; }
+    .cb:hover { border-color: #8ff4ff; background: rgba(120,200,255,0.2); }
+    .cb.dis { opacity: 0.45; } .cb.act { border-color: var(--gold); background: rgba(255,210,90,0.35); }
+    .cb .ic { font-size: 28px; line-height: 1; } .cb .lb { font-size: 10.5px; font-weight: 800; line-height: 1.1; margin-top: 3px; text-align: center; }
+    .cb .co { font-size: 9px; color: #ffe39a; font-weight: 700; } .cb .hk { position: absolute; top: 2px; right: 4px; font-size: 10px; color: var(--gold); font-weight: 900; }
+    .cb .cd { position: absolute; left: 0; right: 0; top: 0; background: rgba(0,0,0,0.5); }
+    #hud-tip { position: fixed; right: 12px; bottom: 150px; max-width: 320px; padding: 10px 12px; border-radius: 12px; background: rgba(10,14,26,0.95); border: 2px solid #3d4a73; font-size: 14px; font-weight: 700; color: #cfd8ee; display: none; z-index: 11; }
+    #hud-tip.on { display: block; } #hud-tip b { color: #fff; } #hud-tip .why { color: #ffb09a; }
+    #selbox { position: fixed; border: 2px solid #7dff8a; background: rgba(125,255,138,0.12); pointer-events: none; display: none; z-index: 9; }
+    #menu { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8,10,18,0.6); z-index: 25; padding: 16px; }
+    #menu.on { display: flex; }
+    #menu .stats { color: #cfd8ee; font-weight: 800; line-height: 1.6; margin: 6px 0 8px; }
+    @media (max-width: 760px) { #hud-mini { width: 120px; height: 120px; } #hud-card { grid-template-columns: repeat(3, 64px); } .cb { width: 64px; height: 64px; } }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="start">
+    <div class="card">
+      <h1>Kroniky Říše</h1>
+      <p class="sub">Fantasy strategie na válečném stole · VR · MR · PC</p>
+      <div class="btns">
+        <button class="big vr" id="btn-vr" disabled>🥽 Hrát ve VR<small>Válečný stan, mapa jako miniatura na stole</small></button>
+        <button class="big mr" id="btn-mr" disabled>🏠 Hrát v MR<small>Bojiště na tvém skutečném stole</small></button>
+        <button class="big" id="btn-pc">🖥 Hrát na PC<small>Myš a klávesnice</small></button>
+      </div>
+      <div class="row" id="diff">
+        <span class="chip" data-d="easy">Lehká</span><span class="chip" data-d="normal">Střední</span><span class="chip" data-d="hard">Těžká</span>
+      </div>
+      <div class="row"><span class="chip" id="test">🧪 Testovací režim</span></div>
+      <p class="note" id="xrnote">Zjišťuji podporu VR…</p>
+      <details>
+        <summary>Jak se hraje</summary>
+        <div class="controls">
+          Postav říši, těž <b>zlato</b> v dolech a <b>dřevo</b> v lesích, stav farmy kvůli <b>jídlu</b>, cvič armádu a povolej <b>hrdinu</b>. Vyhraješ, když zničíš všechny budovy Klanu Popela. Tábory divočiny hlídají poklady a dávají hrdinovi zkušenosti.<br><br>
+          <b>VR:</b> štípni jednotku = výběr · táhni prsty po stole = štětec výběru · s výběrem štípni do mapy = rozkaz · levá dlaň k sobě = velitelská karta (stavby, výcvik, kouzla) a <b>taktický čas</b> · zlatá madla = posun, obě = zoom a otočení · s ovladači: spoušť = štípnutí, grip = posun, páčky = posun/otáčení/zoom, X = karta, Y = menu.<br><br>
+          <b>PC:</b> levé tlačítko výběr (obdélník, dvojklik) · pravé rozkaz · A útok · S stůj · D drž · Q/E kouzla · Ctrl+1–3 skupiny · F1 nečinní dělníci · F2 armáda · kolečko zoom · šipky posun.
+        </div>
+      </details>
+      <p class="note">Modely, zvuky i svět jsou vlastní (procedurálně generované). Hra je inspirovaná žánrem klasických RTS, není s žádnou z nich spojená.</p>
+    </div>
+  </div>
+  <div id="hud">
+    <div id="hud-res"></div>
+    <button id="hud-menu">☰ Menu</button>
+    <div id="hud-msgs"></div>
+    <div id="hud-bottom">
+      <canvas id="hud-mini" width="192" height="192"></canvas>
+      <div id="hud-sel"></div>
+      <div id="hud-card"></div>
+    </div>
+    <div id="hud-tip"></div>
+  </div>
+  <div id="selbox"></div>
+  <div id="menu"></div>
+  <script type="module">
+    import { App } from './src/main.js';
+    const app = new App();
+    const $ = (id) => document.getElementById(id);
+    let test = false;
+    const diffs = [...document.querySelectorAll('#diff .chip')];
+    const setDiff = (d) => { app.settings.difficulty = d; app.saveSettings(); diffs.forEach((c) => c.classList.toggle('on', c.dataset.d === d)); };
+    diffs.forEach((c) => c.addEventListener('click', () => setDiff(c.dataset.d)));
+    setDiff(app.settings.difficulty || 'normal');
+    $('test').addEventListener('click', () => { test = !test; $('test').classList.toggle('on', test); });
+    $('btn-pc').addEventListener('click', () => app.startDesktop({ test }));
+    $('btn-vr').addEventListener('click', () => app.startXR('vr', { test }));
+    $('btn-mr').addEventListener('click', () => app.startXR('ar', { test }));
+    $('hud-menu').addEventListener('click', () => app.openDomMenu('pause'));
+    (async () => {
+      const note = $('xrnote');
+      if (!navigator.xr) { note.textContent = 'Tento prohlížeč nepodporuje WebXR – hraj na PC, nebo otevři stránku v prohlížeči Meta Questu.'; return; }
+      const [vr, ar] = await Promise.all([navigator.xr.isSessionSupported('immersive-vr').catch(() => false), navigator.xr.isSessionSupported('immersive-ar').catch(() => false)]);
+      $('btn-vr').disabled = !vr; $('btn-mr').disabled = !ar;
+      note.textContent = vr ? 'Brýle připravené. Nejlíp se hraje rukama bez ovladačů.' : 'VR tu není k dispozici – otevři stránku v prohlížeči Meta Questu.';
+    })();
+    if (new URLSearchParams(location.search).has('autostart')) app.startDesktop({ test: new URLSearchParams(location.search).has('test') });
+  </script>
+  <script>
+    // Vercel Web Analytics (bez cookies) – jen na nasazeném webu
+    if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+      window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+      const s = document.createElement('script'); s.defer = true; s.src = '/_vercel/insights/script.js'; document.head.appendChild(s);
+    }
+  </script>
+</body>
+</html>

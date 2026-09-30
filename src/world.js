@@ -1,43 +1,20 @@
-// Vykreslení bojiště („deska“): terén, lesy, doly, budovy, jednotky (InstancedMesh), výběr, zdraví, střely, efekty, mlha války.
-// Vše je v lokálních souřadnicích mapy (skupina `map`), celou desku (`board`) posouvá/škáluje main.js.
+// Vykreslení bojiště („deska“): terén, lesy, doly, budovy, jednotky (InstancedMesh + zapečené animace), výběr,
+// zdraví, střely, efekty, mlha války. Vše v lokálních souřadnicích mapy (skupina `map`); desku posouvá main.js.
 import * as THREE from 'three';
 import { MAP_W, MAP_H, UNITS, BUILDINGS, TEAM_INFO, ABILITIES } from './config.js';
 import { part, merge, unitGeo, buildingGeo, mineGeo, treeGeo, stumpGeo, rockGeo, carryGeo, arrowGeo, flagGeo } from './models.js';
+import { ASSETS, BUILDING_MODELS, VAT_W, animFrames } from './assets.js';
+import { shade, shared, vatDepth, grassDetailTexture } from './shade.js';
 
 const W = MAP_W, H = MAP_H;
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
+const _af = [0, 0, 0];
 const UP = new THREE.Vector3(0, 1, 0);
-const UNIT_VIS = 1.35; // jednotky vizuálně větší než jejich „fyzický“ poloměr (čitelnost na stole ve VR)
+const UNIT_VIS = 1.35; // procedurální tvorové (vlci, golem) vizuálně větší než jejich „fyzický“ poloměr
+const HEIGHT_K = 0.8; // budovy o kousek nižší (mapa je stolní miniatura, ať nezakrývají jednotky)
 
-// ------------------------------------------------------------------ mlha války v shaderu (sdílené uniformy)
-export const fogUniforms = {
-  uFog: { value: null },
-  uMapInv: { value: new THREE.Matrix4() },
-  uFogOn: { value: 1 },
-};
-export function fogMaterial(mat, { fog = true } = {}) {
-  mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, fogUniforms);
-    sh.vertexShader = 'uniform mat4 uMapInv;\nvarying vec2 vMapPos;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
-      { vec4 wp = vec4(transformed, 1.0);
-        #ifdef USE_INSTANCING
-          wp = instanceMatrix * wp;
-        #endif
-        vMapPos = (uMapInv * (modelMatrix * wp)).xz; }`);
-    let fs = 'uniform sampler2D uFog;\nuniform float uFogOn;\nvarying vec2 vMapPos;\n' + sh.fragmentShader;
-    if (fog) fs = fs.replace('#include <opaque_fragment>', `
-      { float fv = texture2D(uFog, vMapPos / vec2(${W.toFixed(1)}, ${H.toFixed(1)})).r;
-        fv = mix(1.0, fv, uFogOn);
-        float lum = dot(outgoingLight, vec3(0.3, 0.55, 0.15));
-        vec3 dim = mix(vec3(lum) * vec3(0.8, 0.85, 1.0), outgoingLight, 0.45) * 0.55;
-        vec3 dark = lum * vec3(0.16, 0.18, 0.26) + vec3(0.03, 0.035, 0.06);
-        outgoingLight = fv < 0.5 ? mix(dark, dim, fv * 2.0) : mix(dim, outgoingLight, (fv - 0.5) * 2.0); }
-      #include <opaque_fragment>`);
-    sh.fragmentShader = fs;
-  };
-  mat.customProgramCacheKey = () => 'fog' + fog;
-  return mat;
-}
+export const fogUniforms = shared;
+export function fogMaterial(mat, { fog = true } = {}) { return shade(mat, { fog, clouds: fog }); }
 
 function softDot() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
@@ -65,22 +42,27 @@ function smoothNoise(x, z) {
 export class World {
   constructor(game) {
     this.game = game;
+    this.fx = 1; // hustota efektů a trávy (nastavení grafiky)
     this.board = new THREE.Group();
     this.board.name = 'board';
     this.map = new THREE.Group();
     this.map.position.set(-W / 2, 0, -H / 2);
     this.board.add(this.map);
-    this.mat = fogMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.02, flatShading: true }));
-    this.unitMat = fogMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.05, flatShading: true }), { fog: false });
+    this.mat = shade(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02 }));
+    this.flatMat = shade(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.02, flatShading: true }));
+    this.treeMat = shade(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }), { wind: 0.05, windFrom: 0.35 });
+    this.unitMat = shade(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.05, flatShading: true }), { fog: false, clouds: true, rim: 0.45 });
     this.fogData = new Uint8Array(W * H * 4);
     this.fogF = new Float32Array(W * H);
     this.fogTex = new THREE.DataTexture(this.fogData, W, H, THREE.RGBAFormat);
     this.fogTex.magFilter = THREE.LinearFilter; this.fogTex.minFilter = THREE.LinearFilter;
     this.fogTex.needsUpdate = true;
-    fogUniforms.uFog.value = this.fogTex;
+    shared.uFog.value = this.fogTex;
+    this.hq = ASSETS.ready;
     this.buildTerrain();
     this.buildTrees();
     this.buildStatic();
+    this.buildGrass();
     this.buildUnits();
     this.buildOverlays();
     this.buildFx();
@@ -88,6 +70,7 @@ export class World {
     this.mineMeshes = new Map();
     this.siteMeshes = new Map();
     this.ruinMeshes = [];
+    this.fans = [];
     this.updateFog(1, true);
   }
 
@@ -129,7 +112,11 @@ export class World {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.computeVertexNormals();
-    const terrain = new THREE.Mesh(geo, fogMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 })));
+    // jemná kresba trávy (šedotónová textura násobí barvy vrcholů)
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * W / 3, uv.getY(i) * H / 3);
+    const tmat = shade(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, map: grassDetailTexture() }));
+    const terrain = new THREE.Mesh(geo, tmat);
     terrain.receiveShadow = true;
     terrain.name = 'terrain';
     this.map.add(terrain);
@@ -149,14 +136,16 @@ export class World {
   }
   buildTrees() {
     const g = this.game;
+    const A = ASSETS.hex;
+    const geos = this.hq ? [A.tree_single_A, A.tree_single_B, A.tree_single_A] : [treeGeo(0), treeGeo(1), treeGeo(2)];
     this.treeVar = [0, 1, 2].map((v) => {
       const n = g.trees.filter((t) => t.v === v).length;
-      const im = new THREE.InstancedMesh(treeGeo(v), this.mat, Math.max(1, n));
-      im.castShadow = true;
+      const im = new THREE.InstancedMesh(geos[v], this.treeMat, Math.max(1, n));
+      im.castShadow = true; im.receiveShadow = true;
       this.map.add(im);
       return im;
     });
-    this.stumps = new THREE.InstancedMesh(stumpGeo(), this.mat, g.trees.length);
+    this.stumps = new THREE.InstancedMesh(this.hq ? A.tree_single_A_cut : stumpGeo(), this.mat, g.trees.length);
     this.map.add(this.stumps);
     this.refreshTrees();
   }
@@ -164,14 +153,16 @@ export class World {
     const g = this.game;
     const cnt = [0, 0, 0];
     let sc = 0;
+    const big = this.hq ? 1.25 : 1;
     for (const t of g.trees) {
       _e.set(0, t.rot, 0); _q.setFromEuler(_e);
       if (t.alive) {
-        const s = t.s * (t.wood < 40 ? 0.85 + 0.15 * (t.wood / 40) : 1);
-        _m.compose(_p.set(t.x + Math.sin(t.rot * 3) * 0.12, 0, t.z + Math.cos(t.rot * 5) * 0.12), _q, _s.set(s, s * (0.9 + (t.rot % 0.4)), s));
+        // stromy se kácením zmenšují
+        const s = t.s * big * (t.wood < 40 ? 0.8 + 0.2 * (t.wood / 40) : 1) * (t.v === 2 ? 1.2 : 1);
+        _m.compose(_p.set(t.x + Math.sin(t.rot * 3) * 0.15, 0, t.z + Math.cos(t.rot * 5) * 0.15), _q, _s.set(s, s * (0.9 + (t.rot % 0.4)), s));
         this.treeVar[t.v].setMatrixAt(cnt[t.v]++, _m);
       } else {
-        _m.compose(_p.set(t.x, 0, t.z), _q, _s.set(1, 1, 1));
+        _m.compose(_p.set(t.x, 0, t.z), _q, _s.setScalar(this.hq ? 1.6 : 1));
         this.stumps.setMatrixAt(sc++, _m);
       }
     }
@@ -181,20 +172,132 @@ export class World {
     g.treesDirty = false;
   }
   buildStatic() {
-    for (const r of this.game.rocks) {
-      const m = new THREE.Mesh(rockGeo(r.w, r.h), this.mat);
-      m.position.set(r.x + r.w / 2, 0, r.z + r.h / 2);
-      m.castShadow = true;
-      this.map.add(m);
+    const A = ASSETS.hex;
+    if (!this.hq) {
+      for (const r of this.game.rocks) {
+        const m = new THREE.Mesh(rockGeo(r.w, r.h), this.flatMat);
+        m.position.set(r.x + r.w / 2, 0, r.z + r.h / 2);
+        m.castShadow = true;
+        this.map.add(m);
+      }
+      this.mineGeo = mineGeo();
+      return;
     }
-    this.mineGeo = mineGeo();
+    // skály: několik kamenů na každé políčko skal (instancované podle typu)
+    const kinds = ['rock_single_A', 'rock_single_B', 'rock_single_C', 'rock_single_D', 'rock_single_E'];
+    const lists = kinds.map(() => []);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (const r of this.game.rocks) for (let z = r.z; z < r.z + r.h; z++) for (let x = r.x; x < r.x + r.w; x++) {
+      for (let k = 0; k < 3; k++) {
+        const s = 2.2 + rnd() * 1.8;
+        _e.set(0, rnd() * 6.28, 0); _q.setFromEuler(_e);
+        _m.compose(_p.set(x + 0.2 + rnd() * 0.6, 0, z + 0.2 + rnd() * 0.6), _q, _s.set(s, s * (1 + rnd() * 1.2), s));
+        lists[(rnd() * 5) | 0].push(_m.clone());
+      }
+    }
+    kinds.forEach((k, i) => {
+      if (!lists[i].length) return;
+      const im = new THREE.InstancedMesh(A[k], this.flatMat, lists[i].length);
+      lists[i].forEach((m, j) => im.setMatrixAt(j, m));
+      im.castShadow = true;
+      this.map.add(im);
+    });
+    // hory kolem mapy (diorama): pás za okrajem, střídají se tři modely
+    const mts = ['mountain_A_grass_trees', 'mountain_B_grass_trees', 'mountain_C_grass'];
+    const ml = mts.map(() => []);
+    const ring = [];
+    for (let k = -1; k <= W + 1; k += 2.6) { ring.push([k, -1.6], [k, H + 1.6]); }
+    for (let k = 1.6; k <= H - 1; k += 2.6) { ring.push([-1.6, k], [W + 1.6, k]); }
+    ring.forEach(([x, z], i) => {
+      const s = 1.35 + rnd() * 0.5;
+      _e.set(0, rnd() * 6.28, 0); _q.setFromEuler(_e);
+      _m.compose(_p.set(x, -0.35, z), _q, _s.set(s, s * (0.4 + rnd() * 0.35), s));
+      ml[i % 3].push(_m.clone());
+    });
+    const mtMat = shade(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, color: '#9db28a' }), { fog: false, wind: 0.02, windFrom: 0.8 });
+    mts.forEach((k, i) => {
+      const im = new THREE.InstancedMesh(A[k], mtMat, ml[i].length);
+      ml[i].forEach((m, j) => im.setMatrixAt(j, m));
+      im.castShadow = true;
+      this.map.add(im);
+    });
+    this.mineGeo = this.fitGeo(A.building_mine_yellow, 3, 3, 1);
+  }
+  /** Geometrie modelu vycentrovaná a zmenšená na půdorys w×h políček. */
+  fitGeo(src, w, h, hk = HEIGHT_K) {
+    const b = src.boundingBox || (src.computeBoundingBox(), src.boundingBox);
+    const sx = (w * 0.86) / (b.max.x - b.min.x), sz = (h * 0.86) / (b.max.z - b.min.z);
+    const s = Math.min(sx, sz);
+    const g = src.clone();
+    g.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
+    g.scale(s, s * hk, s);
+    g.userData.s = s;
+    g.userData.cx = (b.min.x + b.max.x) / 2; g.userData.cz = (b.min.z + b.max.z) / 2; g.userData.y0 = b.min.y;
+    return g;
+  }
+  /** Tráva a květiny: instancované trsy s větrem, jen na volných políčkách mimo základny. */
+  buildGrass() {
+    const g = this.game;
+    const blade = merge([
+      part(new THREE.ConeGeometry(0.05, 0.32, 3), '#6aa846', { pos: [0, 0.16, 0] }),
+      part(new THREE.ConeGeometry(0.045, 0.26, 3), '#7cbd52', { pos: [0.07, 0.13, 0.03], rot: [0.3, 0, -0.35] }),
+      part(new THREE.ConeGeometry(0.045, 0.28, 3), '#5e9a3e', { pos: [-0.06, 0.14, -0.02], rot: [-0.25, 0, 0.35] }),
+    ]);
+    const flower = merge([
+      part(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 3), '#5e9a3e', { pos: [0, 0.11, 0] }),
+      part(new THREE.IcosahedronGeometry(0.05, 0), '#ffffff', { pos: [0, 0.23, 0] }),
+    ]);
+    const grassMat = shade(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), { wind: 0.35, windFrom: 0 });
+    const flowMat = shade(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), { wind: 0.3, windFrom: 0 });
+    const spots = [], flowers = [];
+    let seed = 99;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const near = (x, z) => g.buildings.some((b) => Math.abs(b.cx - x) < b.w / 2 + 3 && Math.abs(b.cz - z) < b.h / 2 + 3) || g.mines.some((m) => Math.abs(m.cx - x) < 3 && Math.abs(m.cz - z) < 3);
+    for (let z = 1; z < H - 1; z++) for (let x = 1; x < W - 1; x++) {
+      if (g.block[z * W + x]) continue;
+      if (near(x + 0.5, z + 0.5)) continue;
+      const n = rnd();
+      if (n < 0.55) spots.push([x + rnd(), z + rnd()]);
+      if (n < 0.12) spots.push([x + rnd(), z + rnd()]);
+      if (rnd() < 0.06) flowers.push([x + rnd(), z + rnd()]);
+    }
+    const cols = ['#ffe066', '#ff8fb0', '#b8a0ff', '#ffffff', '#ff9a5a'];
+    this.grass = new THREE.InstancedMesh(blade, grassMat, spots.length);
+    spots.forEach(([x, z], i) => { const s = 0.8 + rnd() * 0.7; _e.set(0, rnd() * 6.28, 0); _q.setFromEuler(_e); _m.compose(_p.set(x, 0, z), _q, _s.set(s, s, s)); this.grass.setMatrixAt(i, _m); });
+    this.grass.receiveShadow = true;
+    this.flowers = new THREE.InstancedMesh(flower, flowMat, Math.max(1, flowers.length));
+    flowers.forEach(([x, z], i) => { const s = 0.8 + rnd() * 0.5; _m.compose(_p.set(x, 0, z), _q.identity(), _s.set(s, s, s)); this.flowers.setMatrixAt(i, _m); this.flowers.setColorAt(i, _c.set(cols[i % cols.length])); });
+    this.flowers.count = flowers.length;
+    this.grassSpots = spots;
+    this.map.add(this.grass, this.flowers);
+    this.setDensity(this.fx);
+  }
+  /** Hustota trávy podle nastavení grafiky (0.35 / 0.65 / 1). */
+  setDensity(k) {
+    this.fx = k;
+    if (this.grass) this.grass.count = Math.floor(this.grassSpots.length * Math.min(1, k));
+    if (this.flowers) this.flowers.visible = k > 0.5;
   }
 
   // ------------------------------------------------------------------ jednotky
   buildUnits() {
     this.unitIM = new Map();
     const make = (type, team, cap) => {
-      const im = new THREE.InstancedMesh(unitGeo(type, team), this.unitMat, cap);
+      let im;
+      const va = ASSETS.units[type + team];
+      if (this.hq && va) {
+        const vat = { tex: va.tex, N: va.N, W: VAT_W };
+        const mat = shade(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.05 }), { fog: false, rim: 0.45, vat });
+        const geo = va.geo.clone();
+        const aAnim = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+        aAnim.setUsage(THREE.DynamicDrawUsage);
+        geo.setAttribute('aAnim', aAnim);
+        im = new THREE.InstancedMesh(geo, mat, cap);
+        im.customDepthMaterial = vatDepth(vat);
+        im.userData.vat = va;
+        im.userData.anim = aAnim;
+      } else im = new THREE.InstancedMesh(unitGeo(type, team), this.unitMat, cap);
       im.count = 0; im.frustumCulled = false; im.castShadow = true;
       this.map.add(im);
       this.unitIM.set(type + team, im);
@@ -412,8 +515,10 @@ export class World {
   update(dt, ctx) {
     const g = this.game;
     this.map.updateMatrixWorld();
-    fogUniforms.uMapInv.value.copy(this.map.matrixWorld).invert();
-    fogUniforms.uFogOn.value = g.revealAll ? 0 : 1;
+    shared.uMapInv.value.copy(this.map.matrixWorld).invert();
+    shared.uFogOn.value = g.revealAll ? 0 : 1;
+    shared.uTime.value = performance.now() / 1000;
+    for (const f of this.fans) f.rotation.z += dt * 1.6;
     this.fogT = (this.fogT || 0) - dt;
     if (this.fogT <= 0) { this.updateFog(0.08); this.fogT = 0.08; }
     if (g.treesDirty) this.refreshTrees();
@@ -423,6 +528,28 @@ export class World {
     this.syncOverlays(dt, ctx);
     this.syncFx(dt);
   }
+  /** Geometrie budovy pro typ a tým (+ lopatky mlýna zvlášť, otáčejí se). */
+  buildingModel(type, team) {
+    this.bgeo = this.bgeo || {};
+    const key = type + team;
+    if (this.bgeo[key]) return this.bgeo[key];
+    const d = BUILDINGS[type];
+    let rec;
+    const name = BUILDING_MODELS[type] + (team === 1 ? '_red' : '_blue');
+    const src = this.hq && ASSETS.hex[name];
+    if (src) {
+      const geo = this.fitGeo(src, d.w, d.h);
+      rec = { geo, fan: null };
+      const part = ASSETS.parts[name];
+      if (part) {
+        const u = geo.userData, s = u.s;
+        const fg = part.geo.clone();
+        fg.scale(s, s * HEIGHT_K, s);
+        rec.fan = { geo: fg, pos: new THREE.Vector3((part.pivot.x - u.cx) * s, (part.pivot.y - u.y0) * s * HEIGHT_K, (part.pivot.z - u.cz) * s) };
+      }
+    } else rec = { geo: buildingGeo(type, team), fan: null };
+    return (this.bgeo[key] = rec);
+  }
   syncBuildings(dt) {
     const g = this.game;
     const live = new Set();
@@ -431,29 +558,38 @@ export class World {
       live.add(b.id);
       let rec = this.bmeshes.get(b.id);
       if (!rec) {
-        const key = b.type + b.team;
-        this.bgeo = this.bgeo || {};
-        const geo = this.bgeo[key] || (this.bgeo[key] = buildingGeo(b.type, b.team));
-        const mesh = new THREE.Mesh(geo, this.mat);
+        const model = this.buildingModel(b.type, b.team);
+        const mesh = new THREE.Mesh(model.geo, this.mat);
         mesh.position.set(b.cx, 0, b.cz);
-        mesh.castShadow = true;
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        // vchody k hráči: hráčovy budovy čelem dolů (k hráči), soupeřovy nahoru
         mesh.rotation.y = b.team === 1 ? Math.PI : 0;
         this.map.add(mesh);
-        // lešení u rozestavěné budovy
+        if (model.fan) {
+          const fan = new THREE.Mesh(model.fan.geo, this.mat);
+          fan.position.copy(model.fan.pos);
+          fan.castShadow = true;
+          mesh.add(fan);
+          this.fans.push(fan);
+          mesh.userData.fan = fan;
+        }
         const scaf = new THREE.Mesh(this.scaffoldGeo(b.w, b.h), this.mat);
         scaf.position.copy(mesh.position);
+        scaf.castShadow = true;
         this.map.add(scaf);
-        rec = { mesh, scaf, shake: 0 };
+        rec = { mesh, scaf };
         this.bmeshes.set(b.id, rec);
       }
       const p = b.done ? 1 : b.progress;
-      rec.mesh.scale.set(1, 0.08 + 0.92 * p, 1);
+      rec.mesh.scale.set(1, 0.06 + 0.94 * p, 1);
       rec.scaf.visible = !b.done;
+      if (!b.done) rec.scaf.scale.set(1, 0.6 + 0.4 * Math.min(1, p * 1.5), 1);
       if (b.hitT > 0) { b.hitT -= dt; rec.mesh.position.x = b.cx + Math.sin(g.time * 60) * 0.03; } else rec.mesh.position.x = b.cx;
     }
     for (const [id, rec] of this.bmeshes) {
       if (live.has(id)) continue;
       const b = g.ents.get(id);
+      if (rec.mesh.userData.fan) this.fans = this.fans.filter((f) => f !== rec.mesh.userData.fan);
       this.map.remove(rec.mesh); this.map.remove(rec.scaf);
       this.bmeshes.delete(id);
       if (b && b.dead && g.exploredAt(b.cx, b.cz)) this.addRuin(b);
@@ -461,10 +597,10 @@ export class World {
     // doly
     for (const m of g.mines) {
       if (!this.mineMeshes.has(m.id)) {
-        const mesh = new THREE.Mesh(this.mineGeo, this.mat);
+        const mesh = new THREE.Mesh(this.mineGeo, this.hq ? this.mat : this.flatMat);
         mesh.position.set(m.cx, 0, m.cz);
         mesh.rotation.y = m.cz < H / 2 ? Math.PI : 0;
-        mesh.castShadow = true;
+        mesh.castShadow = true; mesh.receiveShadow = true;
         this.map.add(mesh);
         this.mineMeshes.set(m.id, mesh);
       }
@@ -489,26 +625,33 @@ export class World {
     this._scaf = this._scaf || {};
     const k = w + 'x' + h;
     if (this._scaf[k]) return this._scaf[k];
+    if (this.hq && ASSETS.hex.building_scaffolding) return (this._scaf[k] = this.fitGeo(ASSETS.hex.building_scaffolding, w, h, 1));
     const P = [];
     const hw = w / 2 - 0.15, hh = h / 2 - 0.15;
     for (const [x, z] of [[-hw, -hh], [hw, -hh], [-hw, hh], [hw, hh]]) P.push(part(new THREE.BoxGeometry(0.08, 1.4, 0.08), '#8a5a33', { pos: [x, 0.7, z] }));
-    P.push(part(new THREE.BoxGeometry(w - 0.2, 0.06, 0.08), '#8a5a33', { pos: [0, 0.9, -hh] }), part(new THREE.BoxGeometry(w - 0.2, 0.06, 0.08), '#8a5a33', { pos: [0, 0.9, hh] }));
-    P.push(part(new THREE.BoxGeometry(0.08, 0.06, h - 0.2), '#8a5a33', { pos: [-hw, 0.5, 0] }), part(new THREE.BoxGeometry(0.08, 0.06, h - 0.2), '#8a5a33', { pos: [hw, 0.5, 0] }));
     P.push(part(new THREE.BoxGeometry(w - 0.1, 0.05, h - 0.1), '#b89b72', { pos: [0, 0.03, 0] }));
     return (this._scaf[k] = merge(P));
   }
   ghostGeo(type) {
-    return this.ghostGeos[type] || (this.ghostGeos[type] = buildingGeo(type, 0));
+    return this.ghostGeos[type] || (this.ghostGeos[type] = this.buildingModel(type, 0).geo);
   }
   addRuin(b) {
-    const P = [];
-    for (let k = 0; k < b.w * b.h; k++) {
-      const x = ((k * 0.618) % 1 - 0.5) * b.w * 0.8, z = ((k * 0.37 + 0.2) % 1 - 0.5) * b.h * 0.8;
-      P.push(part(new THREE.DodecahedronGeometry(0.25 + (k % 3) * 0.08, 0), k % 2 ? '#5a4d42' : '#3f3833', { pos: [x, 0.1, z], rot: [k, k, 0], scale: [1, 0.5, 1] }));
+    let geo;
+    if (this.hq && ASSETS.hex.building_destroyed) {
+      this._ruin = this._ruin || {};
+      geo = this._ruin[b.w] || (this._ruin[b.w] = this.fitGeo(ASSETS.hex.building_destroyed, b.w, b.h, 1));
+    } else {
+      const P = [];
+      for (let k = 0; k < b.w * b.h; k++) {
+        const x = ((k * 0.618) % 1 - 0.5) * b.w * 0.8, z = ((k * 0.37 + 0.2) % 1 - 0.5) * b.h * 0.8;
+        P.push(part(new THREE.DodecahedronGeometry(0.25 + (k % 3) * 0.08, 0), k % 2 ? '#5a4d42' : '#3f3833', { pos: [x, 0.1, z], rot: [k, k, 0], scale: [1, 0.5, 1] }));
+      }
+      geo = merge(P);
     }
-    P.push(part(new THREE.BoxGeometry(b.w * 0.9, 0.04, b.h * 0.9), '#2e2a27', { pos: [0, 0.02, 0] }));
-    const m = new THREE.Mesh(merge(P), this.mat);
+    const m = new THREE.Mesh(geo, this.mat);
     m.position.set(b.cx, 0, b.cz);
+    m.rotation.y = (b.cx * 7) % 6.28;
+    m.castShadow = true;
     this.map.add(m);
     this.ruinMeshes.push({ m, t: 0 });
   }
@@ -519,20 +662,29 @@ export class World {
     const put = (u, dying) => {
       const im = this.unitIM.get(u.type + u.team);
       if (!im || im.count >= im.instanceMatrix.count) return;
-      let y = 0, tiltX = 0, tiltZ = 0, fwd = 0;
-      const bob = u.moving ? Math.abs(Math.sin(u.anim * Math.PI)) * 0.06 : 0;
-      y += bob;
-      if (u.atkAnim > 0) { const a = Math.sin(u.atkAnim * Math.PI); fwd = a * 0.12; tiltX = a * 0.25; }
-      let sc = UNIT_VIS;
-      if (dying) {
-        const t = u.deathT;
-        tiltZ = Math.min(1, t * 3) * 1.4;
-        y = -Math.max(0, t - 2) * 0.3;
-        sc = UNIT_VIS * (t > 3 ? Math.max(0.01, 1 - (t - 3)) : 1);
+      const va = im.userData.vat;
+      let y = 0, tiltX = 0, tiltZ = 0, fwd = 0, sc = va ? 1 : UNIT_VIS;
+      const i = im.count;
+      if (va) {
+        // zapečená animace: smrt / útok / kouzlo / chůze / stání
+        const since = g.time - (u.atkStart ?? -99);
+        let clip = 'idle', t = g.time + u.id * 0.37;
+        if (dying) { clip = 'death'; t = u.deathT; y = -Math.max(0, u.deathT - 2.5) * 0.25; }
+        else if (u.castAnim && since < va.segs.cast?.dur) { clip = 'cast'; t = since; }
+        else if (since < (va.segs.attack?.dur || 1) * 0.95) { clip = 'attack'; t = since; }
+        else if (u.moving || u.walkHold > 0) { clip = 'walk'; u.walkT = (u.walkT || 0) + dt * (u.def.speed / 2.4) * g.speed; t = u.walkT; }
+        if (u.moving) u.walkHold = 0.12; else u.walkHold = (u.walkHold || 0) - dt;
+        animFrames(va.segs, clip, t, _af);
+        im.userData.anim.setXYZ(i, _af[0], _af[1], _af[2]);
+      } else {
+        const bob = u.moving ? Math.abs(Math.sin(u.anim * Math.PI)) * 0.06 : 0;
+        y += bob;
+        if (u.atkAnim > 0) { const a = Math.sin(u.atkAnim * Math.PI); fwd = a * 0.12; tiltX = a * 0.25; }
+        if (dying) { const t = u.deathT; tiltZ = Math.min(1, t * 3) * 1.4; y = -Math.max(0, t - 2) * 0.3; }
       }
-      // zrození: vyrůst ze země
+      if (dying && u.deathT > 3.2) sc *= Math.max(0.01, 1 - (u.deathT - 3.2) * 1.2);
       const age = g.time - (u.born || 0);
-      if (age < 0.4 && !dying) sc = UNIT_VIS * (0.3 + age * 1.75);
+      if (age < 0.4 && !dying) sc *= 0.3 + age * 1.75;
       _e.set(tiltX, u.facing, tiltZ, 'YXZ'); _q.setFromEuler(_e);
       _m.compose(_p.set(u.x + Math.sin(u.facing) * fwd, y, u.z + Math.cos(u.facing) * fwd), _q, _s.set(sc, sc, sc));
       im.setMatrixAt(im.count++, _m);
@@ -540,7 +692,7 @@ export class World {
         const cim = this.carryIM[u.carry.res];
         const c = u.carry.res === 'gold' ? gc++ : wc++;
         if (c < 80) {
-          _m.compose(_p.set(u.x - Math.sin(u.facing) * 0.2, 0.66 + bob, u.z - Math.cos(u.facing) * 0.2), _q, _s.set(UNIT_VIS, UNIT_VIS, UNIT_VIS));
+          _m.compose(_p.set(u.x - Math.sin(u.facing) * 0.2, 0.5, u.z - Math.cos(u.facing) * 0.2), _q, _s.set(1.3, 1.3, 1.3));
           cim.setMatrixAt(c, _m);
         }
       }
@@ -550,14 +702,13 @@ export class World {
       put(u, false);
     }
     for (const u of g.corpses || []) if (g.visibleAt(u.x, u.z)) put(u, true);
-    for (const im of this.unitIM.values()) im.instanceMatrix.needsUpdate = true;
+    for (const im of this.unitIM.values()) { im.instanceMatrix.needsUpdate = true; if (im.userData.anim) im.userData.anim.needsUpdate = true; }
     this.carryIM.gold.count = Math.min(80, gc); this.carryIM.wood.count = Math.min(80, wc);
     this.carryIM.gold.instanceMatrix.needsUpdate = this.carryIM.wood.instanceMatrix.needsUpdate = true;
-    // hrdinové – ukazatel
     [0, 1].forEach((t) => {
       const h = g.hero(t), m = this.heroGems[t];
       m.visible = !!(h && !h.hidden && g.seen(h));
-      if (m.visible) { m.position.set(h.x, 1.9 + Math.sin(g.time * 3) * 0.08, h.z); m.rotation.y = g.time * 2; }
+      if (m.visible) { m.position.set(h.x, 2.15 + Math.sin(g.time * 3) * 0.08, h.z); m.rotation.y = g.time * 2; }
     });
   }
   syncProjectiles() {
@@ -573,6 +724,11 @@ export class World {
     }
     this.arrows.count = n;
     this.arrows.instanceMatrix.needsUpdate = true;
+  }
+  buildingTop(type) {
+    const g = this.buildingModel(type, 0).geo;
+    if (!g.boundingBox) g.computeBoundingBox();
+    return g.boundingBox.max.y;
   }
   syncOverlays(dt, ctx) {
     const g = this.game;
@@ -601,7 +757,7 @@ export class World {
       if (selected) addRing(u.x, u.z, u.def.size + 0.14, ringCol(u.team));
       else if (hover === u) addRing(u.x, u.z, u.def.size + 0.14, ringCol(u.team), 0.5);
       if (selected || u.hp < u.maxHp || hover === u || u.def.hero || showAll) {
-        const hgt = ({ knight: 1.35, hero: 1.28, golem: 1.4 }[u.type] || 0.95) * UNIT_VIS;
+        const hgt = ({ worker: 1.25, footman: 1.4, archer: 1.35, knight: 1.7, hero: 1.85, golem: 1.9, wolf: 0.9 }[u.type] || 1.4);
         addBar(u.x, hgt, u.z, u.hp / u.maxHp, u.def.hero ? 0.95 : 0.7, u.team === 0 ? 0 : 1, u.def.hero && (selected || u.team === 0) ? u.mana / u.maxMana : 0);
       }
     }
@@ -609,7 +765,7 @@ export class World {
       if (!g.seen(b)) continue;
       const selected = sel.has(b.id);
       if (selected || hover === b) addRing(b.cx, b.cz, Math.max(b.w, b.h) * 0.72, ringCol(b.team), selected ? 1 : 0.5);
-      const top = { townhall: 3.2, tower: 3.0, altar: 2.1, barracks: 2.1, stable: 2.0, farm: 1.3 }[b.type] || 2;
+      const top = this.buildingTop(b.type);
       if (!b.done) addBar(b.cx, top * (0.3 + 0.7 * b.progress) + 0.3, b.cz, b.progress, b.w * 0.5, 2);
       else if (b.queue.length && b.team === 0) addBar(b.cx, top + 0.55, b.cz, b.queue[0].t / b.queue[0].total, b.w * 0.45, 2);
       if (b.done && (b.hp < b.maxHp || selected || hover === b)) addBar(b.cx, top + 0.3, b.cz, b.hp / b.maxHp, b.w * 0.5, b.team === 0 ? 0 : 1);

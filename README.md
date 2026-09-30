@@ -4,9 +4,10 @@ Realtimová fantasy strategie pro **Meta Quest 3** – ve VR, v MR i na PC. Stav
 cvičíš armádu, vedeš hrdinu a porážíš Klan Popela. Celé bojiště je živá miniatura na válečném stole,
 kterou ovládáš rukama.
 
-Hra je inspirovaná žánrem klasických RTS 3. generace (základna + hrdina + divočina). Všechny názvy, frakce, modely
-a zvuky jsou vlastní – procedurálně generované, bez externích assetů. Jediné převzaté soubory jsou modely rukou
-(WebXR Input Profiles, MIT) a three.js (MIT).
+Hra je inspirovaná žánrem klasických RTS 3. generace (základna + hrdina + divočina). Názvy, frakce, mapa a zvuky
+jsou vlastní. Modely postav a budov: **KayKit** – Character Pack: Adventurers, Character Pack: Skeletons
+a Medieval Hexagon Pack od **Kaye Lousberga** ([kaylousberg.com](https://kaylousberg.com), licence **CC0**).
+Modely rukou: WebXR Input Profiles (MIT), three.js (MIT).
 
 **Hrát:** otevři web v prohlížeči Meta Questu → *Hrát ve VR* (nebo *v MR*). Na PC funguje myš a klávesnice.
 
@@ -35,8 +36,8 @@ po krocích a zoom kolem bodu pod paprskem, levá páčka = posun, **X** = karta
 ## Obsah hry (v1)
 
 - **Suroviny:** zlato (doly), dřevo (lesy – kácení mění krajinu), jídlo (farmy, limit 60).
-- **Budovy:** Radnice, Farma, Kasárna, Oltář hrdinů, Rytířská síň, Strážní věž. Stavějí dělníci, víc dělníků = rychleji.
-- **Jednotky:** Dělník, Pěšák, Lučištník, Rytíř + **hrdina** Strážce (úrovně 1–5, aura brnění,
+- **Budovy:** Radnice, Farma (větrný mlýn), Kasárna, Oltář hrdinů, Síň válečníků, Strážní věž. Stavějí dělníci, víc dělníků = rychleji.
+- **Jednotky:** Dělník, Pěšák, Lučištník, Válečník + **hrdina** Strážce (mág) (úrovně 1–5, aura brnění,
   *Svaté světlo* – léčení, *Hromový úder* – plošné poškození a zpomalení). Padlého hrdinu oživíš v oltáři.
 - **Divočina:** tábory vlků a Kamenného strážce hlídají rozšiřující doly a poklad uprostřed mapy; dávají hrdinovi zkušenosti.
 - **Soupeř:** AI Klanu Popela těží, staví podle plánu, cvičí, čistí tábory a útočí ve vlnách, brání základnu, hrdina kouzlí.
@@ -63,6 +64,23 @@ Levé tlačítko výběr (obdélník, dvojklik = stejný typ) · pravé rozkaz �
 - Háčky: `window.__app`, `window.__game`, `?autostart` (rovnou PC hra), testovací režim na úvodní obrazovce (nekonečné suroviny, rychlé stavění).
 
 ---
+
+## Novinky v2 – grafika na maximum
+
+- **Detailní CC0 modely KayKit místo vlastních kostiček:** Aliance Svítání jsou dobrodruzi (rytíř, lučištnice s kuší,
+  barbar se sekerou, mág jako hrdina), Klan Popela je armáda **kostlivců**. Budovy jsou středověké stavby ve dvou barvách
+  (modrá / červená): hrad, větrný mlýn s točícími se lopatkami, kasárna, kostel jako oltář, kovárna, strážní věž.
+  Rozestavěné budovy mají lešení, zničené zůstanou jako trosky. Zlatý důl, stromy, skály i hory kolem mapy jsou z téhož balíku.
+- **Plné animace postav** (stání, chůze, útok, kouzlo, smrt) zapečené do textury → stovky jednotek ve pár draw callech.
+- **Krajina:** kresba trávy v terénu, tisíce stébel a květin ve větru, stromy se vlní, přes mapu plují stíny mraků,
+  obrys postav proti světlu, hory kolem mapy jako dioráma.
+- **Stíny** (budovy, stromy i animované postavy) – přizpůsobí se desce i ve VR.
+- **Nastavení grafiky** Nízká / Střední / Vysoká / Ultra (rozlišení, foveace, 72/90 Hz, stíny, hustota trávy, mraky)
+  + **ukazatel FPS** – v pauze na PC i ve VR. Quest začíná na Střední.
+- Rytíř je teď **Válečník** (barbar s obouruční sekerou) ze **Síně válečníků**.
+
+Stahuje se asi 6 MB modelů (komprimované), animace se zapékají při spuštění (pár sekund, ukazatel na úvodní obrazovce).
+**Netestováno na Questu** – hlavně zajímá plynulost na Střední; kdyby se trhalo, přepni na Nízkou a dej vědět FPS.
 
 ## Novinky v1
 

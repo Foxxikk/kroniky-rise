@@ -32,9 +32,9 @@ export const UNITS = {
     desc: 'Střílí na dálku, i na letce.',
   },
   knight: {
-    name: 'Rytíř', icon: '🐎', hp: 800, armor: 4, dmg: 26, cd: 1.4, range: 0.3, speed: 3.5, size: 0.45, sight: 7,
+    name: 'Válečník', icon: '🪓', hp: 800, armor: 4, dmg: 26, cd: 1.4, range: 0.3, speed: 2.9, size: 0.45, sight: 7,
     cost: { gold: 245, wood: 60 }, food: 4, time: 26, hot: 'R',
-    desc: 'Rychlá těžká jízda.',
+    desc: 'Těžký bojovník s obouruční sekerou.',
   },
   hero: {
     name: 'Strážce', icon: '👑', hp: 700, armor: 3, dmg: 24, cd: 1.3, range: 0.3, speed: 3.0, size: 0.42, sight: 9,
@@ -83,8 +83,8 @@ export const BUILDINGS = {
     trains: ['hero'], hot: 'O', desc: 'Povolá hrdinu (a oživí ho).',
   },
   stable: {
-    name: 'Rytířská síň', icon: '🐴', w: 3, h: 3, hp: 1000, armor: 3, cost: { gold: 200, wood: 120 }, time: 45, sight: 6,
-    trains: ['knight'], requires: 'barracks', hot: 'N', desc: 'Cvičí rytíře. Vyžaduje kasárna.',
+    name: 'Síň válečníků', icon: '⚒', w: 3, h: 3, hp: 1000, armor: 3, cost: { gold: 200, wood: 120 }, time: 45, sight: 6,
+    trains: ['knight'], requires: 'barracks', hot: 'N', desc: 'Cvičí válečníky. Vyžaduje kasárna.',
   },
   tower: {
     name: 'Strážní věž', icon: '🗼', w: 2, h: 2, hp: 700, armor: 5, cost: { gold: 110, wood: 70 }, time: 30, sight: 9,

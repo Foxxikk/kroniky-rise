@@ -13,7 +13,7 @@ try:
         pg.on('console', lambda m: logs.append(m.type + ': ' + m.text))
         pg.on('pageerror', lambda e: logs.append('PAGEERROR: ' + str(e)))
         pg.goto('http://localhost:8765/index.html?autostart' + ('&test' if 'TEST' in os.environ else ''))
-        pg.wait_for_function('window.__app && window.__app.game', timeout=30000)
+        pg.wait_for_function('window.__app && window.__app.game', timeout=120000)
         time.sleep(2)
         if script:
             r = pg.evaluate(open(script).read()) if os.path.exists(script) else None

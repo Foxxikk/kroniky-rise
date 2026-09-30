@@ -38,6 +38,8 @@
     .row { display: flex; gap: 8px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
     .chip { cursor: pointer; padding: 8px 14px; border-radius: 999px; border: 2px solid #3d4a73; background: rgba(0,0,0,0.25); color: var(--dim); font-weight: 800; font-size: 15px; }
     .chip.on { border-color: var(--gold); color: #fff; background: rgba(201,161,74,0.25); }
+    .load { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); margin-top: 14px; overflow: hidden; transition: opacity .6s; }
+    .load i { display: block; height: 100%; width: 0; background: var(--gold); transition: width .2s; }
     .note { margin-top: 14px; font-size: 13.5px; color: var(--dim); line-height: 1.5; font-weight: 700; }
     .controls { margin-top: 12px; text-align: left; font-size: 13.5px; line-height: 1.6; color: var(--dim); background: rgba(0,0,0,0.25); border-radius: 14px; padding: 10px 14px; font-weight: 700; }
     .controls b { color: #fff; }
@@ -75,6 +77,7 @@
     .cb .cd { position: absolute; left: 0; right: 0; top: 0; background: rgba(0,0,0,0.5); }
     #hud-tip { position: fixed; right: 12px; bottom: 150px; max-width: 320px; padding: 10px 12px; border-radius: 12px; background: rgba(10,14,26,0.95); border: 2px solid #3d4a73; font-size: 14px; font-weight: 700; color: #cfd8ee; display: none; z-index: 11; }
     #hud-tip.on { display: block; } #hud-tip b { color: #fff; } #hud-tip .why { color: #ffb09a; }
+    #fps { position: fixed; left: 10px; top: 10px; z-index: 12; padding: 6px 10px; border-radius: 10px; background: rgba(0,0,0,0.6); font-size: 13px; font-weight: 800; color: #cfd8ee; display: none; }
     #selbox { position: fixed; border: 2px solid #7dff8a; background: rgba(125,255,138,0.12); pointer-events: none; display: none; z-index: 9; }
     #menu { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8,10,18,0.6); z-index: 25; padding: 16px; }
     #menu.on { display: flex; }
@@ -100,6 +103,7 @@
         <span class="chip" data-d="easy">Lehká</span><span class="chip" data-d="normal">Střední</span><span class="chip" data-d="hard">Těžká</span>
       </div>
       <div class="row"><span class="chip" id="test">🧪 Testovací režim</span></div>
+      <div class="load"><i id="loadbar"></i></div>
       <p class="note" id="xrnote">Zjišťuji podporu VR…</p>
       <details>
         <summary>Jak se hraje</summary>
@@ -109,7 +113,7 @@
           <b>PC:</b> levé tlačítko výběr (obdélník, dvojklik) · pravé rozkaz · A útok · S stůj · D drž · Q/E kouzla · Ctrl+1–3 skupiny · F1 nečinní dělníci · F2 armáda · kolečko zoom · šipky posun.
         </div>
       </details>
-      <p class="note">Modely, zvuky i svět jsou vlastní (procedurálně generované). Hra je inspirovaná žánrem klasických RTS, není s žádnou z nich spojená.</p>
+      <p class="note">Modely: KayKit od Kaye Lousberga (CC0). Hra je inspirovaná žánrem klasických RTS, není s žádnou z nich spojená.</p>
     </div>
   </div>
   <div id="hud">
@@ -124,6 +128,7 @@
     <div id="hud-tip"></div>
   </div>
   <div id="selbox"></div>
+  <div id="fps"></div>
   <div id="menu"></div>
   <script type="module">
     import { App } from './src/main.js';
@@ -139,6 +144,8 @@
     $('btn-vr').addEventListener('click', () => app.startXR('vr', { test }));
     $('btn-mr').addEventListener('click', () => app.startXR('ar', { test }));
     $('hud-menu').addEventListener('click', () => app.openDomMenu('pause'));
+    const load = $('loadbar');
+    app.onAssetProgress = (p) => { load.style.width = Math.round(p * 100) + '%'; if (p >= 1) load.parentElement.style.opacity = 0; };
     (async () => {
       const note = $('xrnote');
       if (!navigator.xr) { note.textContent = 'Tento prohlížeč nepodporuje WebXR – hraj na PC, nebo otevři stránku v prohlížeči Meta Questu.'; return; }

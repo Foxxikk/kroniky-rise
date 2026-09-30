@@ -6,9 +6,9 @@ import { dotTexture } from './world.js';
 export class Env {
   constructor(scene) {
     this.scene = scene;
-    this.hemi = new THREE.HemisphereLight('#fff4dd', '#4a4038', 1.25);
+    this.hemi = new THREE.HemisphereLight('#fff4dd', '#4a4038', 0.95);
     scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight('#fff0d6', 2.0);
+    this.sun = new THREE.DirectionalLight('#fff0d6', 2.7);
     this.sun.position.set(-8, 14, 6);
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
@@ -92,6 +92,6 @@ export class Env {
   setMode(mode) {
     this.tent.visible = mode === 'vr';
     this.scene.background = mode === 'ar' ? null : mode === 'vr' ? new THREE.Color('#1a1510') : this.bg;
-    this.hemi.intensity = mode === 'vr' ? 1.1 : 1.25;
+    this.hemi.intensity = mode === 'vr' ? 0.9 : 0.95;
   }
 }

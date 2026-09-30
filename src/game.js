@@ -595,7 +595,7 @@ export class Game {
       this.turn(u, Math.atan2(t.x + (t.w ? t.w / 2 : 0) - u.x, t.z + (t.h ? t.h / 2 : 0) - u.z), dt);
       if (u.cool <= 0) {
         u.cool = u.def.cd;
-        u.atkAnim = 1;
+        u.atkAnim = 1; u.atkStart = this.time; u.castAnim = false;
         if (u.def.projectile) this.fire(u, t);
         else this.damage(t, this.dmgOf(u), u);
         this.event('attack', u);
@@ -645,7 +645,7 @@ export class Game {
     if ((u.cds[o.ab] || 0) > 0 || u.mana < A.mana) { u.order = { type: 'idle' }; return; }
     u.mana -= A.mana;
     u.cds[o.ab] = A.cd;
-    u.atkAnim = 1;
+    u.atkAnim = 1; u.atkStart = this.time; u.castAnim = true;
     const amt = A.amount(u.level);
     if (o.ab === 'heal') {
       t.hp = Math.min(t.maxHp, t.hp + amt);
@@ -751,7 +751,7 @@ export class Game {
         u.chopT = (u.chopT || 0) + dt * mult;
         if (u.chopT >= GATHER.chopTime) {
           u.chopT = 0;
-          u.atkAnim = 1;
+          u.atkAnim = 1; if (this.time - (u.atkStart ?? -9) > 1.1) { u.atkStart = this.time; u.castAnim = false; }
           if (!u.carry || u.carry.res !== 'wood') u.carry = { res: 'wood', amt: 0 };
           u.carry.amt++;
           t.wood--;
@@ -856,7 +856,7 @@ export class Game {
       if (!u.building) { u.building = b.id; b.builders++; }
       u.path = null;
       this.turn(u, Math.atan2(b.cx - u.x, b.cz - u.z), dt);
-      if ((u.hammerT = (u.hammerT || 0) - dt) < 0) { u.hammerT = 0.5; u.atkAnim = 1; if (Math.random() < 0.35) this.event('hammer', u); }
+      if ((u.hammerT = (u.hammerT || 0) - dt) < 0) { u.hammerT = 0.5; u.atkAnim = 1; if (this.time - (u.atkStart ?? -9) > 1.1) { u.atkStart = this.time; u.castAnim = false; } if (Math.random() < 0.35) this.event('hammer', u); }
       return;
     }
     this.moveTo(u, b.cx, b.cz, dt, this.rectGoals(b));

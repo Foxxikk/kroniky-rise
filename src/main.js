@@ -8,6 +8,8 @@ import { HandVisuals } from './hands.js';
 import { buildCard, CardPanel, BannerPanel, MenuPanel, DesktopHUD, fmtTime } from './ui.js';
 import { UNITS, BUILDINGS, ABILITIES, MAP_W, MAP_H, DIFFICULTY } from './config.js';
 import { part, merge } from './models.js';
+import { loadAssets, ASSETS } from './assets.js';
+import { Graphics } from './gfx.js';
 
 const W = MAP_W, H = MAP_H;
 const VR_SCALE = 0.027; // 48 políček ≈ 1,3 m
@@ -39,6 +41,7 @@ export class App {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.02, 400);
     this.env = new Env(this.scene);
+    this.gfx = new Graphics(this);
     this.sfx = new Sfx();
     this.mode = 'menu';
     this.selection = new Set();
@@ -65,6 +68,8 @@ export class App {
     window.addEventListener('resize', () => this.resize());
     this.renderer.setAnimationLoop((t, f) => this.loop(t, f));
     window.__app = this;
+    // modely se začnou načítat hned (zapékání animací chvíli trvá)
+    this.assetsP = loadAssets((p) => this.onAssetProgress?.(p));
   }
   saveSettings() { try { localStorage.setItem('kr-settings', JSON.stringify(this.settings)); } catch (e) { /* bez úložiště */ } }
   get xr() { return this.mode === 'vr' || this.mode === 'ar'; }
@@ -93,18 +98,11 @@ export class App {
     this.selectAll('townhall');
     this.setShadows();
   }
-  setShadows() {
-    const on = this.settings.shadows && this.mode === 'desktop';
-    this.renderer.shadowMap.enabled = on;
-    this.env.sun.castShadow = on;
-    if (on) {
-      const s = this.env.sun.shadow.camera;
-      s.left = -30; s.right = 30; s.top = 30; s.bottom = -30; s.near = 1; s.far = 60;
-      s.updateProjectionMatrix();
-    }
-  }
+  setShadows() { this.gfx.apply(); }
+
   async startDesktop(opts) {
-    await this.sfx.init();
+    this.sfx.init();
+    await this.assetsP;
     this.mode = 'desktop';
     this.newGame(opts);
     this.env.setMode('desktop');
@@ -117,7 +115,7 @@ export class App {
     this.paused = false;
   }
   async startXR(kind, opts) {
-    await this.sfx.init();
+    this.sfx.init(); // AudioContext vznikne hned (v rámci kliknutí), zvuky se dopočítají na pozadí
     const sessionMode = kind === 'ar' ? 'immersive-ar' : 'immersive-vr';
     const optional = ['hand-tracking', 'bounded-floor', 'layers'];
     let session;
@@ -127,14 +125,14 @@ export class App {
       alert('Nepodařilo se spustit ' + (kind === 'ar' ? 'MR' : 'VR') + ': ' + e.message);
       return;
     }
+    await this.assetsP;
     this.mode = kind;
     this.newGame(opts);
     this.env.setMode(kind);
     this.setShadows();
-    try { this.renderer.xr.setFramebufferScaleFactor(1.0); } catch (e) { /* ignore */ }
+    this.gfx.beforeSession();
     await this.renderer.xr.setSession(session);
-    try { this.renderer.xr.setFoveation(1); } catch (e) { /* ignore */ }
-    try { if (session.supportedFrameRates?.includes(72)) session.updateTargetFrameRate(72); } catch (e) { /* ignore */ }
+    this.gfx.applySession();
     this.placedXR = false;
     this.hud.show(false);
     document.getElementById('start').classList.add('hidden');
@@ -542,8 +540,6 @@ export class App {
     const tx = c.x - W / 2, tz = c.z - H / 2;
     this.camera.position.set(tx + Math.sin(c.yaw) * Math.cos(c.pitch) * c.dist, Math.sin(c.pitch) * c.dist, tz + Math.cos(c.yaw) * Math.cos(c.pitch) * c.dist);
     this.camera.lookAt(tx, 0, tz);
-    this.env.sun.position.set(tx - 10, 22, tz + 8);
-    this.env.sun.target.position.set(tx, 0, tz);
     // hover, ghost, obdélník
     const h = this.mouse.inside ? this.mouseHit(this.mouse.x, this.mouse.y) : null;
     this.hover = h?.ent || null;
@@ -587,7 +583,8 @@ export class App {
       html = `<h2>Pauza</h2>
         <button class="big" data-a="resume">▶ Pokračovat</button>
         <button class="big" data-a="restart">↻ Nová hra</button>
-        <button class="big" data-a="shadows">Stíny: ${this.settings.shadows ? 'zapnuté' : 'vypnuté'}</button>
+        <button class="big" data-a="gfx">${this.gfx.label()}<small>Nízká · Střední · Vysoká · Ultra</small></button>
+        <button class="big" data-a="fps">Ukazatel FPS: ${this.gfx.s.fps ? 'zapnutý' : 'vypnutý'}</button>
         <button class="big" data-a="vol">Hlasitost: ${Math.round(this.sfx.volume * 100)} %</button>
         <button class="big" data-a="quit">⌂ Hlavní menu</button>
         <div class="controls">${CONTROLS_PC}</div>`;
@@ -608,7 +605,8 @@ export class App {
     this.sfx.play('click');
     if (a === 'resume') this.closeDomMenu();
     else if (a === 'restart') { this.closeDomMenu(); this.newGame({ test: this.game.test }); }
-    else if (a === 'shadows') { this.settings.shadows = !this.settings.shadows; this.saveSettings(); this.setShadows(); this.openDomMenu('pause'); }
+    else if (a === 'gfx') { this.gfx.cycle(); this.openDomMenu('pause'); }
+    else if (a === 'fps') { this.gfx.toggleFps(); this.openDomMenu('pause'); }
     else if (a === 'vol') { const v = [0, 0.4, 0.8, 1][([0, 0.4, 0.8, 1].indexOf(this.sfx.volume) + 1) % 4] ?? 0.8; this.sfx.setVolume(v); this.openDomMenu('pause'); }
     else if (a === 'quit') { this.closeDomMenu(); this.mode = 'menu'; this.hud.show(false); document.getElementById('start').classList.remove('hidden'); }
   }
@@ -1144,6 +1142,8 @@ export class App {
       { id: 'lefty', label: `Karta na ${s.lefty ? 'pravé' : 'levé'} ruce`, sub: 'Pro leváky přepni na pravou', action: () => { s.lefty = !s.lefty; this.saveSettings(); } },
       { id: 'hands', label: this.handsFx.label(), action: () => this.handsFx.cycle() },
       { id: 'vol', label: `Hlasitost: ${Math.round(this.sfx.volume * 100)} %`, action: () => { const L = [0, 0.4, 0.8, 1]; this.sfx.setVolume(L[(L.indexOf(this.sfx.volume) + 1) % 4] ?? 0.8); } },
+      { id: 'gfx', label: this.gfx.label(), sub: 'Nízká · Střední · Vysoká · Ultra (stíny, tráva, rozlišení)', action: () => this.gfx.cycle() },
+      { id: 'fps', label: `Ukazatel FPS: ${this.gfx.s.fps ? 'zapnutý' : 'vypnutý'}`, action: () => this.gfx.toggleFps() },
     ];
     if (k === 'intro') return {
       title: 'Kroniky Říše',
@@ -1215,6 +1215,7 @@ export class App {
 
   // ================================================================== smyčka
   loop(t, frame) {
+    this.gfx.beginFrame();
     const now = performance.now() / 1000;
     const dt = Math.min(0.1, this.lastT ? now - this.lastT : 0.016);
     this.lastT = now;
@@ -1233,7 +1234,9 @@ export class App {
     const scale = this.world.board.scale.x;
     this.world.update(dt, { selection: sel, hover: this.hover, barScale: this.xr ? Math.max(1, 0.03 / scale) * scale : 1, showBars: this.keys.has('Alt') });
     this.sfx.listener(this.xr ? this.renderer.xr.getCamera() : this.camera);
+    this.gfx.fitShadow(this.world.board);
     this.renderer.render(this.scene, this.camera);
+    this.gfx.endFrame();
   }
 }
 

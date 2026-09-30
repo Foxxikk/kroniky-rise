@@ -1,0 +1,1 @@
+(() => { const a = window.__app; return { en: a.renderer.shadowMap.enabled, cast: a.env.sun.castShadow, preset: a.gfx.s.preset, map: a.env.sun.shadow.mapSize.x, pos: a.env.sun.position.toArray(), cam: [a.env.sun.shadow.camera.left, a.env.sun.shadow.camera.far], terr: a.world.terrain.receiveShadow, calls: a.renderer.info.render.calls, tris: a.renderer.info.render.triangles }; })()

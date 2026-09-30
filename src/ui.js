@@ -241,7 +241,8 @@ export class BannerPanel extends CanvasPanel {
     const g = app.game;
     const m = g.messages.filter((x) => g.time - x.t < 5).slice(-2);
     const r = g.res[0], f = g.food(0);
-    const key = [Math.floor(r.gold), Math.floor(r.wood), f.used, f.cap, Math.floor(g.time), m.map((x) => x.text + x.t).join('|'), app.slowmo].join(';');
+    const fps = app.gfx?.text() || '';
+    const key = [Math.floor(r.gold), Math.floor(r.wood), f.used, f.cap, Math.floor(g.time), m.map((x) => x.text + x.t).join('|'), app.slowmo, fps].join(';');
     if (key === this.key) return;
     this.key = key;
     const c = this.ctx, W = this.canvas.width, H = this.canvas.height;
@@ -251,6 +252,7 @@ export class BannerPanel extends CanvasPanel {
     this.text(`🪵 ${Math.floor(r.wood)}`, 300, 52, 42, '#c8f08a');
     this.text(`🍖 ${f.used}/${f.cap}`, 540, 52, 42, f.used >= f.cap ? '#ff8a7a' : '#fff');
     this.text(`⏱ ${fmtTime(g.time)}`, W - 60, 52, 34, '#9fb0d6', 'right', 700);
+    if (fps) this.text(fps, W / 2, 190, 22, '#9fffa8', 'center', 800);
     m.forEach((x, k) => {
       const col = x.kind === 'alert' ? '#ff9a7a' : x.kind === 'good' ? '#9fffa8' : x.kind === 'deny' ? '#ffcf8a' : '#ffffff';
       this.rr(W / 2 - 440, 104 + k * 46, 880, 40, 20, 'rgba(0,0,0,0.55)');

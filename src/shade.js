@@ -65,8 +65,8 @@ export function shade(mat, { fog = true, clouds = true, wind = 0, windFrom = 0.2
       { float fv = texture2D(uFog, vMapPos / vec2(${MAP_W.toFixed(1)}, ${MAP_H.toFixed(1)})).r;
         fv = mix(1.0, fv, uFogOn);
         float lum = dot(outgoingLight, vec3(0.3, 0.55, 0.15));
-        vec3 dim = mix(vec3(lum) * vec3(0.82, 0.86, 1.0), outgoingLight, 0.45) * 0.55;
-        vec3 dark = lum * vec3(0.16, 0.18, 0.26) + vec3(0.03, 0.035, 0.06);
+        vec3 dim = mix(vec3(lum) * vec3(0.82, 0.86, 1.0), outgoingLight, 0.5) * 0.62;
+        vec3 dark = mix(vec3(lum) * vec3(0.5, 0.52, 0.62), outgoingLight, 0.15) * 0.42 + vec3(0.02, 0.022, 0.04);
         outgoingLight = fv < 0.5 ? mix(dark, dim, fv * 2.0) : mix(dim, outgoingLight, (fv - 0.5) * 2.0); }`;
     fs = fs.replace('#include <opaque_fragment>', post + '\n#include <opaque_fragment>');
     sh.fragmentShader = fs;

@@ -168,7 +168,7 @@ export class CardPanel extends CanvasPanel {
     const g = app.game;
     const f = g.food(0);
     const r = g.res[0];
-    const key = JSON.stringify([card.title, card.sub, card.buttons.map((b) => [b.id, b.disabled, b.active, Math.round((b.cooldown || 0) * 20)]), Math.floor(r.gold), Math.floor(r.wood), f.used, f.cap,
+    const key = JSON.stringify([app.cardHighlight && Math.floor(performance.now() / 400) % 2, card.title, card.sub, card.buttons.map((b) => [b.id, b.disabled, b.active, Math.round((b.cooldown || 0) * 20)]), Math.floor(r.gold), Math.floor(r.wood), f.used, f.cap,
       Math.floor(g.time), card.queue?.map((q) => Math.round(q.p * 20)), card.portrait && Math.round((card.portrait.hp || 0) * 30), this.hoverId, this.pressId, app.slowmo, app.groupsKey?.()]);
     if (key === this.key) return;
     this.key = key;
@@ -211,7 +211,8 @@ export class CardPanel extends CanvasPanel {
       const x = x0 + (k % cols) * (bw + gap), yy = y + Math.floor(k / cols) * (bh + gap);
       const hov = this.hoverId === b.id, pr = this.pressId === b.id;
       const fill = b.active ? 'rgba(255,210,90,0.45)' : b.disabled ? 'rgba(255,255,255,0.05)' : pr ? 'rgba(120,200,255,0.5)' : hov ? 'rgba(120,200,255,0.28)' : 'rgba(255,255,255,0.12)';
-      this.rr(x, yy, bw, bh, 20, fill, b.active ? '#ffd84a' : hov ? '#8ff4ff' : 'rgba(255,255,255,0.18)', hov || b.active ? 4 : 2);
+      const hl = app.cardHighlight === b.id && Math.floor(performance.now() / 400) % 2 === 0;
+      this.rr(x, yy, bw, bh, 20, hl ? 'rgba(255,216,74,0.4)' : fill, b.active || hl ? '#ffd84a' : hov ? '#8ff4ff' : 'rgba(255,255,255,0.18)', hov || b.active || hl ? 5 : 2);
       this.text(b.icon, x + bw / 2, yy + 38, 40, b.disabled ? '#777' : '#fff', 'center');
       this.text(b.label, x + bw / 2, yy + 80, 21, b.disabled ? '#8088a0' : '#ffffff', 'center', 800, bw - 12);
       if (b.cost) this.text(b.cost, x + bw / 2, yy + 104, 16, b.disabled ? '#707890' : '#ffe39a', 'center', 700, bw - 10);
@@ -332,7 +333,7 @@ export class DesktopHUD {
     const mk = msgs.map((m) => m.text + m.t).join('|');
     if (mk !== this.mk) { this.mk = mk; this.msgs.innerHTML = msgs.map((m) => `<div class="m ${m.kind}">${m.text}</div>`).join(''); }
     const card = buildCard(a);
-    const key = JSON.stringify([card.title, card.sub, card.buttons.map((b) => [b.id, b.disabled, b.active, b.label, b.cost, Math.round((b.cooldown || 0) * 10)]), card.queue?.map((q) => Math.round(q.p * 20)), card.portrait && Math.round((card.portrait.hp || 0) * 50)]);
+    const key = JSON.stringify([a.cardHighlight, card.title, card.sub, card.buttons.map((b) => [b.id, b.disabled, b.active, b.label, b.cost, Math.round((b.cooldown || 0) * 10)]), card.queue?.map((q) => Math.round(q.p * 20)), card.portrait && Math.round((card.portrait.hp || 0) * 50)]);
     if (key !== this.key) {
       this.key = key;
       const P = card.portrait;
@@ -344,7 +345,7 @@ export class DesktopHUD {
       this.card.innerHTML = '';
       for (const b of card.buttons) {
         const el = document.createElement('button');
-        el.className = 'cb' + (b.disabled ? ' dis' : '') + (b.active ? ' act' : '');
+        el.className = 'cb' + (b.disabled ? ' dis' : '') + (b.active ? ' act' : '') + (a.cardHighlight === b.id ? ' hl' : '');
         el.innerHTML = `<span class="ic">${b.icon}</span><span class="lb">${b.label}</span>${b.cost ? `<span class="co">${b.cost}</span>` : ''}${b.hot ? `<span class="hk">${b.hot}</span>` : ''}${b.cooldown > 0 ? `<span class="cd" style="height:${b.cooldown * 100}%"></span>` : ''}`;
         el.addEventListener('click', (e) => { e.stopPropagation(); if (b.disabled) { a.deny(b.why); return; } a.sfx.play('click'); b.action(); });
         el.addEventListener('mouseenter', () => { this.tip.innerHTML = `<b>${b.label}</b>${b.cost ? ` · ${b.cost}` : ''}<br>${b.why ? `<span class="why">${b.why}</span>` : b.desc || ''}`; this.tip.classList.add('on'); });

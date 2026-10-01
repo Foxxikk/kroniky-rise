@@ -65,6 +65,19 @@ Levé tlačítko výběr (obdélník, dvojklik = stejný typ) · pravé rozkaz �
 
 ---
 
+## Novinky v4 – VR opravdu funguje + výuka
+
+- **Oprava: ve VR stála hra.** Úvodní menu se umisťovalo dřív, než brýle poslaly polohu hlavy → skončilo na podlaze,
+  hra čekala v pauze a nikdo se nehýbal. Teď se menu ukáže až s prvním snímkem z brýlí v úrovni očí, a když se otočíš jinam,
+  připluje zpátky před tebe.
+- **Stůl jako kosočtverec:** tvoje radnice je ~55 cm přímo před tebou, Klan Popela na protějším rohu. Zlatá madla jsou po stranách
+  bližšího rohu (fungují pro jakékoli natočení desky).
+- **Interaktivní výuka** (VR i PC, 10 kroků): vyber dělníka → velitelská karta → farma → kasárna → pěšáci → štětec výběru → rozkaz
+  a formace → tábor vlků. Každý krok se splní sám, jakmile ho uděláš; zlatá šipka ukazuje kam, tlačítko na kartě bliká.
+  Během výuky Klan Popela čeká a dostaneš zásobu surovin navíc. Ve VR ji spustíš v úvodním menu, na PC čipem 🎓 Výuka.
+- **Oprava chyb kreslení se stíny** na Questu (stínová mapa se vytvářela pozdě) a světlejší neprozkoumaná mapa.
+- Testováno v **emulátoru Meta Quest 3** (IWER od Mety): spuštění VR tlačítkem, štípnutí rukou do menu, výuka, šipky, panely.
+
 ## Novinky v3 – VR na prvním místě
 
 - **Do bitvy (velitelský pohled):** tlačítko 👁 na kartě (nebo **B** na ovladači) tě přenese přímo na bojiště –

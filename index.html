@@ -78,6 +78,11 @@
     #hud-tip { position: fixed; right: 12px; bottom: 150px; max-width: 320px; padding: 10px 12px; border-radius: 12px; background: rgba(10,14,26,0.95); border: 2px solid #3d4a73; font-size: 14px; font-weight: 700; color: #cfd8ee; display: none; z-index: 11; }
     #hud-tip.on { display: block; } #hud-tip b { color: #fff; } #hud-tip .why { color: #ffb09a; }
     #fps { position: fixed; left: 10px; top: 10px; z-index: 12; padding: 6px 10px; border-radius: 10px; background: rgba(0,0,0,0.6); font-size: 13px; font-weight: 800; color: #cfd8ee; display: none; }
+    #tut { position: fixed; left: 12px; top: 54px; z-index: 12; width: min(380px, calc(100% - 24px)); padding: 12px 14px; border-radius: 16px; background: rgba(16,22,38,0.94); border: 3px solid var(--gold); display: none; font-weight: 700; color: #e3e9f8; font-size: 14.5px; line-height: 1.45; }
+    #tut .n { color: var(--gold); font-size: 12px; font-weight: 900; } #tut b { font-size: 19px; color: #ffe9a8; } #tut p { margin: 6px 0 10px; }
+    #tut .b { display: flex; gap: 8px; justify-content: flex-end; } #tut button { font: 800 14px var(--font); color: #fff; border-radius: 12px; border: 2px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); padding: 7px 12px; cursor: pointer; }
+    #tut button[data-id="tut-next"] { background: var(--green); }
+    .cb.hl { border-color: var(--gold); animation: hl 0.8s infinite alternate; } @keyframes hl { to { background: rgba(255,216,74,0.45); } }
     #selbox { position: fixed; border: 2px solid #7dff8a; background: rgba(125,255,138,0.12); pointer-events: none; display: none; z-index: 9; }
     #menu { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8,10,18,0.6); z-index: 25; padding: 16px; }
     #menu.on { display: flex; }
@@ -102,7 +107,7 @@
       <div class="row" id="diff">
         <span class="chip" data-d="easy">Lehká</span><span class="chip" data-d="normal">Střední</span><span class="chip" data-d="hard">Těžká</span>
       </div>
-      <div class="row"><span class="chip" id="test">🧪 Testovací režim</span></div>
+      <div class="row"><span class="chip" id="tutchip">🎓 Výuka</span><span class="chip" id="test">🧪 Testovací režim</span></div>
       <div class="load"><i id="loadbar"></i></div>
       <p class="note" id="xrnote">Zjišťuji podporu VR…</p>
       <details>
@@ -129,6 +134,7 @@
   </div>
   <div id="selbox"></div>
   <div id="fps"></div>
+  <div id="tut"></div>
   <div id="menu"></div>
   <script type="module">
     import { App } from './src/main.js';
@@ -140,7 +146,11 @@
     diffs.forEach((c) => c.addEventListener('click', () => setDiff(c.dataset.d)));
     setDiff(app.settings.difficulty || 'normal');
     $('test').addEventListener('click', () => { test = !test; $('test').classList.toggle('on', test); });
-    $('btn-pc').addEventListener('click', () => app.startDesktop({ test }));
+    let tut = false;
+    try { tut = localStorage.getItem('kr-tut') !== '1'; } catch (e) { tut = true; }
+    $('tutchip').classList.toggle('on', tut);
+    $('tutchip').addEventListener('click', () => { tut = !tut; $('tutchip').classList.toggle('on', tut); });
+    $('btn-pc').addEventListener('click', () => app.startDesktop({ test, tutorial: tut }));
     $('btn-vr').addEventListener('click', () => app.startXR('vr', { test }));
     $('btn-mr').addEventListener('click', () => app.startXR('ar', { test }));
     $('hud-menu').addEventListener('click', () => app.openDomMenu('pause'));

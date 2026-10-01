@@ -24,6 +24,7 @@ export class EnemyAI {
   army() { return this.g.units.filter((u) => u.team === this.team && !u.def.worker && !u.dead); }
   workers() { return this.g.units.filter((u) => u.team === this.team && u.def.worker && !u.dead); }
   update(dt) {
+    if (this.paused) return; // během výuky Klan Popela čeká
     this.defendT -= dt;
     this.t -= dt;
     this.heroTick(dt);

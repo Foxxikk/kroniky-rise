@@ -249,7 +249,7 @@ export class Game {
     if (!u || u.dead) return;
     if (u.building && o.type !== 'build') this.leaveSite(u);
     if (u.hidden && u.inMine) { u.pendingOrder = o; return; } // ještě v dole – rozkaz platí po vyjití
-    u.order = { ...o };
+    u.order = { ...o, t0: this.time };
     u.path = null;
     u.engage = null;
     u.gatherState = null;

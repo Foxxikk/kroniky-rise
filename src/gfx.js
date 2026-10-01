@@ -39,7 +39,7 @@ export class Graphics {
     const on = p.shadow > 0;
     if (r.shadowMap.enabled !== on) { r.shadowMap.enabled = on; a.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); }); }
     sun.castShadow = on;
-    if (on && sun.shadow.mapSize.x !== p.shadow) { sun.shadow.mapSize.set(p.shadow, p.shadow); sun.shadow.map?.dispose(); sun.shadow.map = null; }
+    if (on && sun.shadow.mapSize.x !== p.shadow) { sun.shadow.mapSize.set(p.shadow, p.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } r.shadowMap.needsUpdate = true; }
     r.shadowMap.autoUpdate = true;
     shared.uClouds.value = p.clouds ? 1 : 0;
     a.world?.setDensity(p.fx);
@@ -76,7 +76,7 @@ export class Graphics {
     sun.shadow.normalBias = 0.02 * s;
     // úsporné stíny: přepočet jen každý druhý snímek
     const r = this.app.renderer;
-    if (this.p.every > 1) { r.shadowMap.autoUpdate = false; if (this.frameNo % this.p.every === 0) r.shadowMap.needsUpdate = true; }
+    if (this.p.every > 1) { r.shadowMap.autoUpdate = false; if (this.frameNo % this.p.every === 0 || !sun.shadow.map) r.shadowMap.needsUpdate = true; }
   }
   beginFrame() {
     const now = performance.now();

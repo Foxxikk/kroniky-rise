@@ -10,9 +10,10 @@ import { UNITS, BUILDINGS, ABILITIES, MAP_W, MAP_H, DIFFICULTY } from './config.
 import { part, merge } from './models.js';
 import { loadAssets, ASSETS } from './assets.js';
 import { Graphics } from './gfx.js';
+import { Tutorial } from './tutorial.js';
 
 const W = MAP_W, H = MAP_H;
-const VR_SCALE = 0.027; // 48 políček ≈ 1,3 m
+const VR_SCALE = 0.032; // 48 políček ≈ 1,5 m, stůl natočený do kosočtverce (tvoje základna vpředu)
 const TABLE_TOP = 0.77;
 const BOARD_BOTTOM = 1.62; // tloušťka podstavce desky (v políčkách)
 const SCALE_MIN = 0.012, SCALE_MAX = 0.45;
@@ -63,6 +64,7 @@ export class App {
     this.scene.add(this.card.mesh, this.banner.mesh, this.menu.mesh);
     this.menuOpen = null;
     this.raycaster = new THREE.Raycaster();
+    this.tutorial = new Tutorial(this);
     this.setupXR();
     this.setupDesktop();
     this.buildHandles();
@@ -96,6 +98,8 @@ export class App {
     this.ended = false;
     this.battle = false; this.battleHero = null; this.boardAnim = null;
     if (this.xr) this.env.setMode(this.mode);
+    this.tutorial.stop(false);
+    if (opts.tutorial) this.tutorial.start();
     const th = this.game.buildings.find((b) => b.team === 0);
     this.cam.x = th.cx + 4; this.cam.z = th.cz - 3;
     this.selectAll('townhall');
@@ -168,10 +172,15 @@ export class App {
     const fwd = _v2.set(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(_q)); fwd.y = 0; fwd.normalize();
     if (fwd.lengthSq() < 0.1) fwd.set(0, 0, -1);
     const yaw = Math.atan2(-fwd.x, -fwd.z);
-    const c = head.clone().addScaledVector(fwd, 0.92);
     const b = this.world.board;
     b.scale.setScalar(VR_SCALE);
-    b.rotation.set(0, yaw, 0);
+    // kosočtverec: roh se základnou hráče míří k hráči, nepřítel na protějším rohu
+    b.rotation.set(0, yaw + Math.PI / 4, 0);
+    // tvoje radnice ~55 cm před tebou
+    const th = this.game.buildings.find((x) => x.team === 0 && x.type === 'townhall');
+    const off = th ? new THREE.Vector3(th.cx - W / 2, 0, th.cz - H / 2).multiplyScalar(VR_SCALE).applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rotation.y) : new THREE.Vector3();
+    const want = head.clone().addScaledVector(fwd, 0.55);
+    const c = new THREE.Vector3(want.x - off.x, 0, want.z - off.z);
     b.position.set(c.x, (this.mode === 'ar' ? Math.max(0.55, Math.min(1.0, head.y - 0.72)) : TABLE_TOP) + BOARD_BOTTOM * VR_SCALE, c.z);
     this.env.tent.position.set(c.x, 0, c.z);
     this.env.tent.rotation.y = yaw;
@@ -703,22 +712,33 @@ export class App {
   placeHandles() {
     const b = this.world.board;
     const cam = this.renderer.xr.getCamera();
-    const head = _v.setFromMatrixPosition(cam.matrixWorld);
-    // bližší hrana: podle směru k hlavě v lokálu desky
+    const head = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
     const loc = b.worldToLocal(head.clone());
-    const half = W / 2 + 1.0;
-    let ex, ez, ax, az;
-    if (Math.abs(loc.z) >= Math.abs(loc.x)) { ex = 0; ez = Math.sign(loc.z || 1) * half; ax = 1; az = 0; } else { ex = Math.sign(loc.x) * half; ez = 0; ax = 0; az = 1; }
-    const s = b.scale.x;
-    const off = Math.min(W / 2 * 0.85, 0.42 / s);
-    const p0 = b.localToWorld(new THREE.Vector3(ex - ax * off, 0.2, ez - az * off));
-    const p1 = b.localToWorld(new THREE.Vector3(ex + ax * off, 0.2, ez + az * off));
-    // levé madlo vlevo z pohledu hráče
+    const hx = W / 2 + 1.0, hz = H / 2 + 1.0;
+    // obvod obdélníku jako parametr t ∈ [0, P)
+    const P = 4 * hx + 4 * hz;
+    const toT = (x, z) => {
+      const cx = Math.max(-hx, Math.min(hx, x)), cz = Math.max(-hz, Math.min(hz, z));
+      const dx = hx - Math.abs(cx), dz = hz - Math.abs(cz);
+      if (dz <= dx) return cz > 0 ? hx + cx : 2 * hx + 2 * hz + (hx - cx); // horní / dolní hrana
+      return cx > 0 ? 2 * hx + (hz - cz) : 4 * hx + 2 * hz + (hz + cz);
+    };
+    const fromT = (t) => {
+      t = ((t % P) + P) % P;
+      if (t < 2 * hx) return [t - hx, hz];
+      t -= 2 * hx; if (t < 2 * hz) return [hx, hz - t];
+      t -= 2 * hz; if (t < 2 * hx) return [hx - t, -hz];
+      t -= 2 * hx; return [-hx, -hz + t];
+    };
+    const t0 = toT(loc.x, loc.z);
+    const d = Math.min(W / 2, 0.36 / b.scale.x);
+    const pts = [fromT(t0 - d), fromT(t0 + d)].map(([x, z]) => b.localToWorld(new THREE.Vector3(x, 0.2, z)));
     const right = _v2.set(1, 0, 0).applyQuaternion(cam.getWorldQuaternion(_q));
-    const swap = p1.clone().sub(p0).dot(right) < 0;
-    this.handleObjs[0].pos = swap ? p1 : p0;
-    this.handleObjs[1].pos = swap ? p0 : p1;
+    const swap = pts[1].clone().sub(pts[0]).dot(right) < 0;
+    this.handleObjs[0].pos = swap ? pts[1] : pts[0];
+    this.handleObjs[1].pos = swap ? pts[0] : pts[1];
   }
+
   pointerRay(ptr) {
     ptr.controller.updateMatrixWorld();
     ptr.origin.setFromMatrixPosition(ptr.controller.matrixWorld);
@@ -773,6 +793,7 @@ export class App {
     const panels = [];
     if (this.menu.mesh.visible) panels.push(this.menu);
     if (this.card.mesh.visible && this.cardHand !== ptr) panels.push(this.card);
+    if (this.tutorial.panel.mesh.visible) panels.push(this.tutorial.panel);
     if (panels.length) {
       this.raycaster.set(ptr.origin, ptr.dir);
       this.raycaster.far = 3;
@@ -1018,7 +1039,7 @@ export class App {
     let aimH = null;
     this.hover = null;
     this.card.hoverId = null;
-    let menuHover = null;
+    let menuHover = null, tutHover = null;
     for (const ptr of this.pointers) {
       if (!ptr.inputSource) continue;
       const h = this.computeHover(ptr);
@@ -1026,7 +1047,7 @@ export class App {
       // poke: špička ukazováčku u tlačítka panelu
       if (ptr.isHand && ptr.hasJoints && ptr.tip && ptr.mode == null) this.checkPoke(ptr);
       let len = 1.2;
-      if (h?.type === 'panel') { len = h.dist; if (h.panel === this.card) this.card.hoverId = h.btn?.id || null; else menuHover = h.btn?.id || null; }
+      if (h?.type === 'panel') { len = h.dist; if (h.panel === this.card) this.card.hoverId = h.btn?.id || null; else if (h.panel === this.tutorial.panel) tutHover = h.btn?.id || null; else menuHover = h.btn?.id || null; }
       else if (h?.type === 'handle') { this.handleObjs[h.k].hover = 1; len = h.dist || 0.3; }
       else if (h?.type === 'board') { len = h.touch ? 0.05 : h.dist; if (!aimH || ptr.inputSource.handedness === (this.settings.lefty ? 'left' : 'right')) aimH = h; }
       ptr.line.scale.z = Math.max(0.02, len);
@@ -1088,7 +1109,9 @@ export class App {
     this.updateOrb(dt);
     // banner a menu
     this.placeBanner(head);
-    if (this.menuOpen) this.drawMenu(menuHover);
+    this.tutorial.panel.hoverId = tutHover;
+    this.tutorial.update(dt, head);
+    if (this.menuOpen) { this.followPanel(this.menu.mesh, head, 0.62, -0.1); this.drawMenu(menuHover); }
     this.handsFx.update(dt);
   }
   /** Akční ruka = ta, na které není karta (pravá, u leváků levá). */
@@ -1234,8 +1257,23 @@ export class App {
     this.orb.scale.setScalar(0.07 + Math.sin(t * 9) * 0.01);
     if (Math.random() < 0.3) this.haptic(ptr, 0.05, 10);
   }
+  /** Panel před hráčem: při otevření skočí do zorného pole, když se hráč otočí jinam, plynule připluje. */
+  followPanel(mesh, head, dist, dy) {
+    const cam = this.renderer.xr.getCamera();
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(_q));
+    const flat = f.clone(); flat.y = 0;
+    if (flat.lengthSq() < 0.01) flat.set(0, 0, -1);
+    flat.normalize();
+    const target = head.clone().addScaledVector(flat, dist); target.y = head.y + dy;
+    const toPanel = mesh.position.clone().sub(head).normalize();
+    const off = f.dot(toPanel) < Math.cos(0.75) || mesh.position.distanceTo(head) > dist * 1.8 || mesh.position.y < head.y - 0.6;
+    if (this.menuPlace === 'snap' || head.lengthSq() === 0) { mesh.position.copy(target); this.menuPlace = head.y > 0.3 ? null : 'snap'; }
+    else if (off || this.menuFollow) { this.menuFollow = mesh.position.distanceTo(target) > 0.03; mesh.position.lerp(target, 0.08); }
+    mesh.lookAt(head);
+    mesh.visible = true;
+  }
   checkPoke(ptr) {
-    const panels = [this.menu, this.card].filter((p) => p.mesh.visible && !(p === this.card && this.cardHand === ptr));
+    const panels = [this.menu, this.card, this.tutorial.panel].filter((p) => p.mesh.visible && !(p === this.card && this.cardHand === ptr));
     for (const p of panels) {
       const L = p.mesh.worldToLocal(_v.copy(ptr.tip));
       const gp = p.mesh.geometry.parameters;
@@ -1334,14 +1372,9 @@ export class App {
   openMenu(kind = 'pause') {
     if (!this.xr) { this.openDomMenu('pause'); return; }
     this.menuOpen = kind;
-    const cam = this.renderer.xr.getCamera();
-    cam.updateMatrixWorld();
-    const head = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
-    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(_q)); f.y = 0; f.normalize();
-    this.menu.mesh.position.copy(head).addScaledVector(f, 0.62);
-    this.menu.mesh.position.y = head.y - 0.08;
-    this.menu.mesh.lookAt(head);
-    this.menu.mesh.visible = true;
+    // poloha se určí až v dalším snímku z brýlí (hned po startu VR ještě není známa poloha hlavy)
+    this.menuPlace = 'snap';
+    this.menu.mesh.visible = false;
     this.menu.key = '';
   }
   closeMenu() { this.menuOpen = null; this.menu.mesh.visible = false; }
@@ -1359,7 +1392,10 @@ export class App {
     if (k === 'intro') return {
       title: 'Kroniky Říše',
       text: 'Štípni jednotku = výběr. Táhni prsty po stole = štětec výběru. S výběrem štípni do mapy = rozkaz. Otoč levou dlaň k sobě = velitelská karta (stavby, výcvik, kouzla). Zlatá madla u stolu = posun, obě = zoom a otočení.',
-      items: [{ id: 'go', label: '▶ Do boje!', primary: true, sub: `Obtížnost: ${DIFFICULTY[s.difficulty].name}`, action: () => this.closeMenu() }, ...settingsItems.slice(0, 2)],
+      items: [
+        { id: 'tut', label: '🎓 Výuka', primary: true, sub: 'Krok za krokem: výběr, stavění, armáda, rozkazy (asi 5 minut)', action: () => { this.closeMenu(); this.tutorial.start(); } },
+        { id: 'go', label: '▶ Hrát rovnou', sub: `Obtížnost: ${DIFFICULTY[s.difficulty].name}`, action: () => this.closeMenu() },
+        ...settingsItems.slice(0, 2)],
     };
     if (k === 'win' || k === 'lose') return {
       title: k === 'win' ? '🏆 Vítězství!' : '💀 Porážka',
@@ -1433,7 +1469,7 @@ export class App {
     if (!this.game) { this.renderer.render(this.scene, this.camera); return; }
     const running = this.mode !== 'menu' && !this.paused && !this.menuOpen && !this.game.over;
     if (this.mode === 'vr' || this.mode === 'ar') this.updateXR(dt, frame);
-    else if (this.mode === 'desktop') { this.updateDesktop(dt); this.hud.update(dt); }
+    else if (this.mode === 'desktop') { this.updateDesktop(dt); this.hud.update(dt); this.tutorial.update(dt, null); }
     if (running) {
       this.game.speed = this.slowmo ? 0.35 : 1;
       this.game.update(dt);

@@ -1,3 +1,5 @@
+import { Music } from './music.js';
+
 // Zvuky: každý efekt se jednou předrenderuje přes OfflineAudioContext do bufferu (na Questu se živá syntéza seká).
 // Při hře jen BufferSource → gain → (panner) → master. Limit souběžných hlasů a minimální odstup stejných zvuků.
 
@@ -62,7 +64,9 @@ export class Sfx {
     this.voices = 0;
     this.last = {};
     this.volume = 0.8;
-    try { const v = localStorage.getItem('kr-vol'); if (v != null) this.volume = +v; } catch (e) { /* bez úložiště */ }
+    this.musicOn = true;
+    this.intensity = 0;
+    try { const v = localStorage.getItem('kr-vol'); if (v != null) this.volume = +v; this.musicOn = localStorage.getItem('kr-music') !== '0'; } catch (e) { /* bez úložiště */ }
   }
   /** Musí se volat z uživatelského gesta (klik / vstup do VR). */
   async init() {
@@ -74,6 +78,22 @@ export class Sfx {
     this.master.gain.value = this.volume;
     const comp = this.ctx.createDynamicsCompressor();
     this.master.connect(comp); comp.connect(this.ctx.destination);
+    // hudba: vlastní sběrnice + dozvuk + šum (pro bicí)
+    const c = this.ctx;
+    this.musicBus = c.createGain();
+    this.musicBus.gain.value = this.musicOn ? 0.42 : 0;
+    this.musicBus.connect(this.master);
+    this.verb = c.createConvolver();
+    this.verb.buffer = this.impulse(2.2, 2.6);
+    this.verbSend = c.createGain();
+    this.verbSend.gain.value = 0.5;
+    this.verbSend.connect(this.verb).connect(this.master);
+    const len = c.sampleRate * 2;
+    this.noise = c.createBuffer(1, len, c.sampleRate);
+    const nd = this.noise.getChannelData(0);
+    for (let i = 0; i < len; i++) nd[i] = Math.random() * 2 - 1;
+    this.music = new Music(this);
+    this.music.setTheme('meadow');
     const rate = this.ctx.sampleRate;
     for (const [name, def] of Object.entries(DEFS)) {
       const vars = def.vars || 1;
@@ -87,6 +107,61 @@ export class Sfx {
         } catch (e) { /* zvuk vynechán */ }
       }
     }
+  }
+  impulse(sec, decay) {
+    const c = this.ctx, n = Math.floor(c.sampleRate * sec);
+    const buf = c.createBuffer(2, n, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay); }
+    return buf;
+  }
+  pluck(freq, t, dur, gain, dest, bright = 2400) {
+    const c = this.ctx;
+    const o = c.createOscillator(), o2 = c.createOscillator();
+    o.type = 'sawtooth'; o2.type = 'triangle';
+    o.frequency.value = freq; o2.frequency.value = freq * 2.003;
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass'; f.Q.value = 3;
+    f.frequency.setValueAtTime(bright, t);
+    f.frequency.exponentialRampToValueAtTime(Math.max(180, freq * 1.2), t + dur * 0.6);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const g2 = c.createGain(); g2.gain.value = 0.25;
+    o.connect(f); o2.connect(g2).connect(f);
+    f.connect(g).connect(dest);
+    o.start(t); o2.start(t); o.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+  }
+  drum(t, gain, dest) {
+    const c = this.ctx;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(120, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.25);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+    o.connect(g).connect(dest);
+    o.start(t); o.stop(t + 0.45);
+    const src = c.createBufferSource(), f = c.createBiquadFilter(), ng = c.createGain();
+    src.buffer = this.noise;
+    f.type = 'lowpass'; f.frequency.value = 1200;
+    ng.gain.setValueAtTime(gain * 0.35, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    src.connect(f).connect(ng).connect(dest);
+    src.start(t, Math.random()); src.stop(t + 0.15);
+  }
+  /** Hudba: 0 = klid, 1 = boj, 2 = velký útok na základnu. Volá se každý snímek. */
+  updateMusic(intensity) {
+    if (!this.ctx || !this.music) return;
+    if (!this.musicOn || this.ctx.state !== 'running') { this.music.silence(); return; }
+    this.intensity = intensity;
+    try { this.music.update(intensity); } catch (e) { /* hudba je jen bonus */ }
+  }
+  setMusic(on) {
+    this.musicOn = on;
+    try { localStorage.setItem('kr-music', on ? '1' : '0'); } catch (e) { /* bez úložiště */ }
+    if (this.musicBus) this.musicBus.gain.setTargetAtTime(on ? 0.42 : 0, this.ctx.currentTime, 0.2);
   }
   setVolume(v) {
     this.volume = v;

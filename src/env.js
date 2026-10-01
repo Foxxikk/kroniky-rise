@@ -49,7 +49,7 @@ export class Env {
     wall.setAttribute('color', new THREE.BufferAttribute(col, 3));
     const wallM = new THREE.Mesh(wall, new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.BackSide, roughness: 1, flatShading: true }));
     wallM.position.y = 1.3; t.add(wallM);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(4.3, 1.8, 24, 1, true), new THREE.MeshStandardMaterial({ color: '#c9b891', side: THREE.BackSide, roughness: 1, flatShading: true }));
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(4.3, 1.8, 24, 1, true), new THREE.MeshStandardMaterial({ color: '#e6d3a8', emissive: '#4a3418', emissiveIntensity: 0.9, side: THREE.BackSide, roughness: 1, flatShading: true }));
     roof.position.y = 3.5; t.add(roof);
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 4.4, 8), new THREE.MeshStandardMaterial({ color: '#6b4527' }));
     pole.position.set(0, 2.2, 1.9); t.add(pole);

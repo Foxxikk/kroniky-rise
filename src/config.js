@@ -84,12 +84,21 @@ export const BUILDINGS = {
   },
   stable: {
     name: 'Síň válečníků', icon: '⚒', w: 3, h: 3, hp: 1000, armor: 3, cost: { gold: 200, wood: 120 }, time: 45, sight: 6,
-    trains: ['knight'], requires: 'barracks', hot: 'N', desc: 'Cvičí válečníky. Vyžaduje kasárna.',
+    trains: ['knight'], research: ['weapon', 'armor', 'bow'], requires: 'barracks', hot: 'N', desc: 'Cvičí válečníky a vylepšuje zbraně a zbroj. Vyžaduje kasárna.',
   },
   tower: {
     name: 'Strážní věž', icon: '🗼', w: 2, h: 2, hp: 700, armor: 5, cost: { gold: 110, wood: 70 }, time: 30, sight: 9,
     dmg: 16, cd: 1.1, range: 6.5, projectile: 'arrow', hot: 'V', desc: 'Sama střílí na nepřátele.',
   },
+};
+// Vylepšení (výzkum v Síni válečníků): 2 úrovně, platí pro všechny jednotky týmu
+export const UPGRADES = {
+  weapon: { name: 'Ostřejší čepele', icon: '🗡', hot: 'Z', max: 2, cost: [{ gold: 120, wood: 60 }, { gold: 220, wood: 140 }], time: [30, 45], dmg: 3, melee: true,
+    desc: (l) => `+3 útok pro pěšáky, válečníky, hrdinu a dělníky (úroveň ${l + 1}/2).` },
+  armor: { name: 'Pevnější zbroj', icon: '🛡', hot: 'X', max: 2, cost: [{ gold: 120, wood: 80 }, { gold: 220, wood: 160 }], time: [30, 45], armor: 1,
+    desc: (l) => `+1 brnění pro všechny jednotky (úroveň ${l + 1}/2).` },
+  bow: { name: 'Napjaté tětivy', icon: '🏹', hot: 'C', max: 2, cost: [{ gold: 100, wood: 80 }, { gold: 200, wood: 160 }], time: [30, 45], dmg: 3, ranged: true,
+    desc: (l) => `+3 útok lučištníků a strážních věží (úroveň ${l + 1}/2).` },
 };
 export const BUILD_ORDER = ['farm', 'barracks', 'altar', 'tower', 'stable', 'townhall'];
 

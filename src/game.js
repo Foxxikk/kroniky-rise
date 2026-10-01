@@ -1,7 +1,7 @@
 // Kroniky Říše – herní logika. Počítá se jen v lokálních souřadnicích mapy (1 políčko = 1),
 // takže stejně funguje na PC, ve VR i v MR. Žádná grafika – jen stav, události a rozkazy.
 import {
-  MAP_W, MAP_H, TEAM, UNITS, BUILDINGS, ABILITIES, HERO_AURA, HERO_XP, HERO_REVIVE, GATHER, START_RES, FOOD_MAX, MAP, DIFFICULTY,
+  MAP_W, MAP_H, TEAM, UNITS, BUILDINGS, UPGRADES, ABILITIES, HERO_AURA, HERO_XP, HERO_REVIVE, GATHER, START_RES, FOOD_MAX, MAP, DIFFICULTY,
 } from './config.js';
 import { PathFinder } from './pathfind.js';
 import { EnemyAI } from './ai.js';
@@ -45,6 +45,7 @@ export class Game {
     if (this.test) this.res[0] = { gold: 99999, wood: 99999 };
     this.stats = { trained: 0, killed: 0, lost: 0, gold: 0, wood: 0 };
     this.camps = [];
+    this.upg = [{ weapon: 0, armor: 0, bow: 0 }, { weapon: 0, armor: 0, bow: 0 }, { weapon: 0, armor: 0, bow: 0 }];
     this.pathBudget = 0;
     this.buildMap();
     this.ai = new EnemyAI(this, TEAM.ENEMY, this.diff);
@@ -173,7 +174,7 @@ export class Game {
     for (const b of this.buildings) {
       if (b.team !== team || b.dead) continue;
       if (b.done) cap += b.def.food || 0;
-      for (const q of b.queue) used += UNITS[q.type]?.food || 0;
+      for (const q of b.queue) used += (q.type && UNITS[q.type]?.food) || 0;
     }
     return { used, cap: Math.min(FOOD_MAX, cap) };
   }
@@ -192,7 +193,7 @@ export class Game {
     if (!b.done) return 'Budova se ještě staví';
     if (d.hero) {
       if (this.hero(b.team)) return 'Hrdina už žije';
-      if (b.queue.some((q) => UNITS[q.type].hero) || this.buildings.some((o) => o.team === b.team && o.queue.some((q) => UNITS[q.type].hero))) return 'Hrdina se už povolává';
+      if (this.buildings.some((o) => o.team === b.team && o.queue.some((q) => q.type && UNITS[q.type].hero))) return 'Hrdina se už povolává';
     }
     if (b.queue.length >= 5) return 'Fronta je plná';
     const f = this.food(b.team);
@@ -213,6 +214,30 @@ export class Game {
     this.pay(b.team, cost);
     const revive = UNITS[type].hero && this.heroOf?.[b.team];
     b.queue.push({ type, t: 0, total: this.test && b.team === 0 ? 1.5 : revive ? HERO_REVIVE.time : UNITS[type].time, cost });
+    this.event('queue', b);
+    return true;
+  }
+  /** Úroveň vylepšení včetně rozpracovaných (aby nešlo zkoumat dvakrát totéž). */
+  upgLevel(team, key, pending = true) {
+    let l = this.upg[team][key];
+    if (pending) for (const b of this.buildings) if (b.team === team && !b.dead) l += b.queue.filter((q) => q.research === key).length;
+    return l;
+  }
+  researchBlocker(b, key) {
+    const U = UPGRADES[key];
+    if (!b.done) return 'Budova se ještě staví';
+    const l = this.upgLevel(b.team, key);
+    if (l >= U.max) return 'Už vylepšeno na maximum';
+    if (b.queue.length >= 5) return 'Fronta je plná';
+    if (!this.canAfford(b.team, U.cost[l])) return 'Nedostatek surovin';
+    return null;
+  }
+  research(b, key) {
+    const why = this.researchBlocker(b, key);
+    if (why) { this.msg(b.team, why, 'deny'); return false; }
+    const U = UPGRADES[key], l = this.upgLevel(b.team, key);
+    this.pay(b.team, U.cost[l]);
+    b.queue.push({ research: key, type: null, t: 0, total: this.test && b.team === 0 ? 1.5 : U.time[l], cost: U.cost[l] });
     this.event('queue', b);
     return true;
   }
@@ -471,6 +496,7 @@ export class Game {
     let a = u.def.armor || 0;
     if (u.kind === 'unit') {
       if (u.def.hero) a += Math.floor((u.level - 1) * 0.7);
+      if (u.team < 2) a += this.upg[u.team].armor;
       const h = this.hero(u.team);
       if (h && dist2(h.x, h.z, u.x, u.z) < HERO_AURA.radius * HERO_AURA.radius) a += HERO_AURA.armor;
     }
@@ -479,6 +505,7 @@ export class Game {
   dmgOf(u) {
     let d = u.def.dmg;
     if (u.def.hero) d += (u.level - 1) * 5;
+    if (u.team < 2) d += (u.def.projectile ? this.upg[u.team].bow : this.upg[u.team].weapon) * 3;
     return d * (0.85 + Math.random() * 0.3);
   }
   radiusOf(e) { return e.kind === 'unit' ? e.def.size : Math.max(e.w, e.h) / 2; }
@@ -948,7 +975,12 @@ export class Game {
     const q = b.queue[0];
     if (q) {
       q.t += dt;
-      if (q.t >= q.total) {
+      if (q.t >= q.total && q.research) {
+        b.queue.shift();
+        this.upg[b.team][q.research]++;
+        if (b.team === 0) this.msg(0, `Vylepšeno: ${UPGRADES[q.research].name} ${this.upg[0][q.research]}/2`, 'good');
+        this.event('upgrade', { team: b.team, key: q.research, x: b.cx, z: b.cz });
+      } else if (q.t >= q.total) {
         const u = this.spawnFrom(b, q.type);
         b.queue.shift();
         if (u) {
@@ -1012,7 +1044,7 @@ export class Game {
   fire(from, t) {
     const y0 = from.kind === 'building' ? 2.2 : 0.6;
     const x0 = from.kind === 'building' ? from.cx : from.x, z0 = from.kind === 'building' ? from.cz : from.z;
-    const dmg = from.kind === 'building' ? from.def.dmg * (0.85 + Math.random() * 0.3) : this.dmgOf(from);
+    const dmg = from.kind === 'building' ? (from.def.dmg + this.upg[from.team].bow * 3) * (0.85 + Math.random() * 0.3) : this.dmgOf(from);
     this.projectiles.push({ x: x0, y: y0, z: z0, sx: x0, sz: z0, sy: y0, target: t.id, dmg, from: from.id, team: from.team, speed: 13, t: 0, dead: false });
   }
   updateProjectiles(dt) {
@@ -1044,6 +1076,7 @@ export class Game {
     const dmg = amount * armorFactor(a);
     t.hp -= dmg;
     t.hitT = 0.25;
+    if (t.team === 0 || src?.team === 0) this.lastCombat = this.time;
     if (t.team === TEAM.NEUTRAL && src && src.team !== TEAM.NEUTRAL) { t.aggro = true; if (!t.engage) t.engage = src.id; this.alertCamp(t.camp, src); }
     // bránit se: nečinná jednotka odpoví útočníkovi
     if (t.kind === 'unit' && src?.kind === 'unit' && !src.dead && t.order.type === 'idle' && !t.def.worker && !t.engage) t.engage = src.id;

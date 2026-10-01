@@ -59,11 +59,25 @@ Levé tlačítko výběr (obdélník, dvojklik = stejný typ) · pravé rozkaz �
   `src/world.js` – vykreslení (InstancedMesh pro jednotky, stromy, střely; mlha války v shaderu), `src/models.js` – procedurální modely,
   `src/ui.js` – velitelská karta (PC DOM i VR canvas), `src/main.js` – režimy a vstupy, `src/audio.js` – předrenderované zvuky.
 - Výkon: ~65 draw callů, ~110 tis. trojúhelníků pro celou mapu; herní logika ~0,03 ms/snímek.
+- **Test ve VR bez brýlí:** `test/xr.py` spustí hru v emulátoru Meta Quest 3 (IWER od Mety, ruce i ovladače), např.
+  `python3 test/xr.py /tmp/snimek test/xr_click.js` nebo `XRMODE=controller python3 test/xr.py /tmp/s test/xr_ctrl.js`.
 - Testy bez brýlí: `test/sim.mjs` (celý zápas AI vs. bot v Node), `test/shot.py` + `test/*.js` (Playwright, včetně falešných XR rukou).
   Spuštění: `node --experimental-default-type=module test/sim.mjs normal good`.
 - Háčky: `window.__app`, `window.__game`, `?autostart` (rovnou PC hra), testovací režim na úvodní obrazovce (nekonečné suroviny, rychlé stavění).
 
 ---
+
+## Novinky v5 – hudba, vylepšení, konec hry
+
+- **Hudba** (převzatý engine z Obrany Království, předrenderované smyčky – na Questu se nesekají): v klidu pastorální melodie,
+  při boji rychlejší s bicími, při útoku na tvou základnu nejvyšší napětí. Zapnutí/vypnutí v pauze (VR i PC).
+- **Vylepšení v Síni válečníků** (2 úrovně každé): 🗡 Ostřejší čepele (+3 útok na blízko), 🛡 Pevnější zbroj (+1 brnění),
+  🏹 Napjaté tětivy (+3 útok lučištníků i věží). Zkoumá se ve frontě jako výcvik; Klan Popela se zbrojí také (po 6. minutě).
+- **Konec hry:** hodnocení 1–3 ⭐ (podle ztrát a času), **rekord** nejrychlejšího vítězství pro každou obtížnost,
+  ohňostroj nad tvou základnou, silné zavibrování ovladačů. Ve VR i na PC.
+- Kvalita: menu ve VR má výšku podle obsahu (žádná prázdná plocha), prosvětlený strop stanu.
+- Celý průchod ověřen v emulátoru Questu 3 i s **ovladači** (spoušť do menu a na mapu, karta nad levým ovladačem,
+  výcvik z karty, Y = pauza, vítězné menu).
 
 ## Novinky v4 – VR opravdu funguje + výuka
 

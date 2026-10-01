@@ -35,6 +35,7 @@ export class EnemyAI {
     this.economy(base);
     this.construct(base);
     this.trainArmy();
+    if (g.time > 360 && Math.random() < 0.3) this.researchStep();
     this.military(base);
   }
   economy(base) {
@@ -115,6 +116,12 @@ export class EnemyAI {
     const vx = bx - ax, vz = bz - az;
     const t = Math.max(0, Math.min(1, ((px - ax) * vx + (pz - az) * vz) / (vx * vx + vz * vz || 1)));
     return Math.hypot(px - ax - vx * t, pz - az - vz * t);
+  }
+  researchStep() {
+    const g = this.g;
+    const b = g.buildings.find((x) => x.team === this.team && x.type === 'stable' && x.done && !x.dead);
+    if (!b || b.queue.length) return;
+    for (const key of ['weapon', 'armor', 'bow']) if (!g.researchBlocker(b, key) && g.res[this.team].gold > 350) { g.research(b, key); return; }
   }
   trainArmy() {
     const g = this.g;

@@ -1,6 +1,6 @@
 // UI: data „velitelské karty“ (sdílená pro PC i VR), canvas panely pro VR a DOM rozhraní pro PC.
 import * as THREE from 'three';
-import { UNITS, BUILDINGS, ABILITIES, BUILD_ORDER, TEAM_INFO, HERO_XP } from './config.js';
+import { UNITS, BUILDINGS, ABILITIES, BUILD_ORDER, TEAM_INFO, HERO_XP, UPGRADES } from './config.js';
 
 const FONT = 'Nunito, "Segoe UI", system-ui, sans-serif';
 export const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -96,12 +96,17 @@ export function buildCard(app) {
   }
   const f = g.food(0);
   card.sub = `${Math.ceil(b.hp)}/${b.maxHp} ❤${d.food ? ` · +${d.food} jídla` : ''}${d.dmg ? ` · útok ${d.dmg}` : ''}`;
-  card.queue = b.queue.map((q) => ({ icon: UNITS[q.type].icon, p: q.t / q.total }));
+  card.queue = b.queue.map((q) => ({ icon: q.research ? UPGRADES[q.research].icon : UNITS[q.type].icon, p: q.t / q.total }));
   for (const type of d.trains || []) {
     const u = UNITS[type];
     const why = g.trainBlocker(b, type);
     const revive = u.hero && g.heroOf?.[0];
     btn({ id: 't-' + type, icon: u.icon, label: revive ? 'Oživit hrdinu' : u.name, hot: u.hot, desc: u.desc, cost: `${costText(g.heroCost(0, type))} · ${u.food}🍖`, disabled: !!why, why, action: () => app.trainAt(type) });
+  }
+  for (const key of d.research || []) {
+    const U = UPGRADES[key], l = Math.min(U.max - 1, g.upgLevel(0, key));
+    const why = g.researchBlocker(b, key);
+    btn({ id: 'r-' + key, icon: U.icon, label: `${U.name} ${Math.min(U.max, g.upgLevel(0, key) + (why === 'Už vylepšeno na maximum' ? 0 : 1))}/${U.max}`, hot: U.hot, desc: U.desc(l), cost: costText(U.cost[l]), disabled: !!why, why, action: () => app.researchAt(key) });
   }
   if (b.queue.length) btn({ id: 'cancelQ', icon: '↩', label: 'Zrušit poslední', hot: 'Esc', desc: 'Vrátí suroviny.', action: () => { for (const x of blds) if (x.queue.length) { g.cancelTrain(x); break; } } });
   if (d.trains) card.hint = app.xr ? 'Štípnutím do mapy nastavíš shromaždiště' : 'Pravým klikem nastavíš shromaždiště';
@@ -278,6 +283,12 @@ export class MenuPanel extends CanvasPanel {
     const key = JSON.stringify([model.title, model.text, model.items.map((i) => [i.id, i.label, i.on, i.sub]), hoverId]);
     if (key === this.key) return;
     this.key = key;
+    // výška panelu podle obsahu (žádná prázdná spodní polovina)
+    let need = 120;
+    if (model.text) need += 34 * Math.min(5, Math.ceil(model.text.length / 42)) + 20;
+    for (const it of model.items) need += it.header ? 44 : (it.sub ? 96 : 76) + 14;
+    need = Math.max(320, Math.min(900, need + 30));
+    if (this.canvas.height !== need) { this.canvas.height = need; this.tex.dispose(); this.mesh.scale.y = need / 900; }
     const c = this.ctx, W = this.canvas.width, H = this.canvas.height;
     c.clearRect(0, 0, W, H);
     this.buttons = [];

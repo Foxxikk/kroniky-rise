@@ -327,6 +327,11 @@ export class App {
     this.attackMoveArmed = false;
     this.game.msg(0, A.target === 'ally' ? `${A.name}: vyber spojence` : `${A.name}: vyber místo`, 'info');
   }
+  researchAt(key) {
+    const b = this.selectedEnts().find((x) => x.kind === 'building' && x.team === 0 && x.def.research?.includes(key));
+    if (!b) return;
+    if (this.game.research(b, key)) this.sfx.play('click'); else this.deny();
+  }
   trainAt(type) {
     const g = this.game;
     const bs = this.selectedEnts().filter((b) => b.kind === 'building' && b.team === 0 && b.def.trains?.includes(type) && b.done);
@@ -610,6 +615,7 @@ export class App {
         <button class="big" data-a="resume">▶ Pokračovat</button>
         <button class="big" data-a="restart">↻ Nová hra</button>
         <button class="big" data-a="gfx">${this.gfx.label()}<small>Nízká · Střední · Vysoká · Ultra</small></button>
+        <button class="big" data-a="music">Hudba: ${this.sfx.musicOn ? 'zapnutá' : 'vypnutá'}</button>
         <button class="big" data-a="fps">Ukazatel FPS: ${this.gfx.s.fps ? 'zapnutý' : 'vypnutý'}</button>
         <button class="big" data-a="vol">Hlasitost: ${Math.round(this.sfx.volume * 100)} %</button>
         <button class="big" data-a="quit">⌂ Hlavní menu</button>
@@ -617,7 +623,9 @@ export class App {
     } else {
       const win = kind === 'win';
       html = `<h2>${win ? '🏆 Vítězství!' : '💀 Porážka'}</h2>
+        ${win ? `<div class="stars">${this.scoreText().st}</div>` : ''}
         <p class="sub">${win ? 'Klan Popela je poražen. Říše slaví!' : 'Tvá základna padla. Zkus to znovu.'}</p>
+        ${this.scoreText().rec ? `<p class="rec">${this.scoreText().rec}</p>` : ''}
         <div class="stats">Čas ${fmtTime(g.time)} · vycvičeno ${g.stats.trained} · padlých nepřátel ${g.stats.killed} · ztráty ${g.stats.lost}<br>vytěženo 🪙 ${g.stats.gold} · 🪵 ${g.stats.wood}</div>
         <button class="big" data-a="restart">↻ Hrát znovu</button>
         <button class="big" data-a="quit">⌂ Hlavní menu</button>`;
@@ -632,6 +640,7 @@ export class App {
     if (a === 'resume') this.closeDomMenu();
     else if (a === 'restart') { this.closeDomMenu(); this.newGame({ test: this.game.test }); }
     else if (a === 'gfx') { this.gfx.cycle(); this.openDomMenu('pause'); }
+    else if (a === 'music') { this.sfx.setMusic(!this.sfx.musicOn); this.openDomMenu('pause'); }
     else if (a === 'fps') { this.gfx.toggleFps(); this.openDomMenu('pause'); }
     else if (a === 'vol') { const v = [0, 0.4, 0.8, 1][([0, 0.4, 0.8, 1].indexOf(this.sfx.volume) + 1) % 4] ?? 0.8; this.sfx.setVolume(v); this.openDomMenu('pause'); }
     else if (a === 'quit') { this.closeDomMenu(); this.mode = 'menu'; this.hud.show(false); document.getElementById('start').classList.remove('hidden'); }
@@ -1386,6 +1395,7 @@ export class App {
       { id: 'lefty', label: `Karta na ${s.lefty ? 'pravé' : 'levé'} ruce`, sub: 'Pro leváky přepni na pravou', action: () => { s.lefty = !s.lefty; this.saveSettings(); } },
       { id: 'hands', label: this.handsFx.label(), action: () => this.handsFx.cycle() },
       { id: 'vol', label: `Hlasitost: ${Math.round(this.sfx.volume * 100)} %`, action: () => { const L = [0, 0.4, 0.8, 1]; this.sfx.setVolume(L[(L.indexOf(this.sfx.volume) + 1) % 4] ?? 0.8); } },
+      { id: 'music', label: `Hudba: ${this.sfx.musicOn ? 'zapnutá' : 'vypnutá'}`, action: () => this.sfx.setMusic(!this.sfx.musicOn) },
       { id: 'gfx', label: this.gfx.label(), sub: 'Nízká · Střední · Vysoká · Ultra (stíny, tráva, rozlišení)', action: () => this.gfx.cycle() },
       { id: 'fps', label: `Ukazatel FPS: ${this.gfx.s.fps ? 'zapnutý' : 'vypnutý'}`, action: () => this.gfx.toggleFps() },
     ];
@@ -1398,8 +1408,8 @@ export class App {
         ...settingsItems.slice(0, 2)],
     };
     if (k === 'win' || k === 'lose') return {
-      title: k === 'win' ? '🏆 Vítězství!' : '💀 Porážka',
-      text: `Čas ${fmtTime(g.time)} · vycvičeno ${g.stats.trained} · padlých nepřátel ${g.stats.killed} · ztráty ${g.stats.lost} · vytěženo ${g.stats.gold} zlata a ${g.stats.wood} dřeva.`,
+      title: k === 'win' ? `🏆 Vítězství! ${this.scoreText().st}` : '💀 Porážka',
+      text: `${k === 'win' ? 'Klan Popela je poražen, říše slaví! ' : 'Tvá základna padla. '}${this.scoreText().rec ? this.scoreText().rec + ' · ' : ''}${this.scoreText().line}`,
       items: [
         { id: 'again', label: '↻ Hrát znovu', primary: true, action: () => { this.closeMenu(); const m = this.mode; this.newGame({ test: g.test }); this.placedXR = false; this.mode = m; } },
         { id: 'exit', label: '⏏ Ukončit VR', action: () => this.renderer.xr.getSession()?.end() },
@@ -1446,15 +1456,61 @@ export class App {
         case 'heal': this.sfx.play('heal', { pos: at(d.x, d.z) }); break;
         case 'thunder': this.sfx.play('thunder', { pos: at(d.x, d.z) }); if (d.team === 0) this.hapticAll(0.8, 120); break;
         case 'levelup': if (d.team === 0) this.sfx.play('levelup'); break;
+        case 'upgrade': if (d.team === 0) { this.sfx.play('built'); this.world.spark(d.x, 2, d.z, '#ffd84a', 20, 1.5, 0.4, 1.2, 1.5); } break;
         case 'treasure': if (d.team === 0) this.sfx.play('coin'); break;
         case 'msg': if (d.kind === 'alert') { this.sfx.play('alert'); this.hapticAll(0.7, 150); } break;
         case 'end': this.onEnd(d.result); break;
       }
     }
   }
+  /** Hudební napětí: 2 = útok na základnu, 1 = boj, 0 = klid. */
+  musicIntensity() {
+    const g = this.game;
+    if (!g || g.over) return 0;
+    if (g.ai.attacking && g.units.some((u) => u.team === 1 && !u.def.worker && g.buildings.some((b) => b.team === 0 && Math.abs(b.cx - u.x) < 10 && Math.abs(b.cz - u.z) < 10))) return 2;
+    return g.time - (g.lastCombat ?? -99) < 8 ? 1 : 0;
+  }
+  /** Hodnocení a rekord (nejrychlejší vítězství na dané obtížnosti). */
+  scoreGame(result) {
+    const g = this.game, s = g.stats;
+    let stars = 0;
+    if (result === 'win') stars = 1 + (s.lost <= s.trained * 0.8 ? 1 : 0) + (s.lost <= s.trained * 0.4 && g.time < 20 * 60 ? 1 : 0);
+    const key = 'kr-best-' + this.settings.difficulty;
+    let best = null, record = false;
+    try {
+      best = JSON.parse(localStorage.getItem(key) || 'null');
+      if (result === 'win' && !g.test && (!best || g.time < best.time)) { record = true; best = { time: g.time, stars }; localStorage.setItem(key, JSON.stringify(best)); }
+    } catch (e) { /* bez úložiště */ }
+    this.score = { stars, best, record: result === 'win' && record };
+    return this.score;
+  }
+  scoreText() {
+    const g = this.game, sc = this.score || {};
+    const st = '⭐'.repeat(sc.stars || 0) + '☆'.repeat(3 - (sc.stars || 0));
+    return { st, rec: sc.record ? '🏅 Nový rekord!' : sc.best ? `Rekord: ${fmtTime(sc.best.time)}` : '', line: `Čas ${fmtTime(g.time)} · vycvičeno ${g.stats.trained} · padlých nepřátel ${g.stats.killed} · ztráty ${g.stats.lost} · vytěženo 🪙 ${g.stats.gold} · 🪵 ${g.stats.wood}` };
+  }
+  celebrate(result) {
+    const g = this.game, w = this.world;
+    const eb = g.ruins?.filter((r) => r.team === 1).pop() || { x: 38, z: 10 };
+    const pb = g.buildings.find((b) => b.team === 0) || { cx: 9, cz: 38 };
+    let n = 0;
+    const burst = () => {
+      if (n++ > (result === 'win' ? 14 : 4)) return;
+      const x = (result === 'win' ? pb.cx : eb.x) + (Math.random() - 0.5) * 10, z = (result === 'win' ? pb.cz : eb.z) + (Math.random() - 0.5) * 10;
+      const col = result === 'win' ? ['#ffd84a', '#7dff8a', '#9fd0ff', '#ff8fb0'][n % 4] : '#8a7a70';
+      w.spark(x, 4 + Math.random() * 3, z, col, 26, 3.5, 0.5, 1.6, 0.4);
+      w.pulse(x, z, col, 0.3, 3, 0.8);
+      if (result === 'win') this.sfx.play('coin', { vol: 0.4 });
+      setTimeout(burst, 260 + Math.random() * 300);
+    };
+    burst();
+  }
   onEnd(result) {
     if (this.ended) return;
     this.ended = true;
+    this.scoreGame(result);
+    this.celebrate(result);
+    this.hapticAll(1, 300);
     this.sfx.play(result === 'win' ? 'win' : 'lose');
     try { if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') window.va?.('event', { name: 'game_end', data: { result, mode: this.mode, difficulty: this.settings.difficulty, minutes: Math.round(this.game.time / 60) } }); } catch (e) { /* ignore */ }
     setTimeout(() => { if (this.xr) this.openMenu(result); else this.openDomMenu(result); }, 1800);
@@ -1477,6 +1533,7 @@ export class App {
     // vybrané jednotky, které zemřely, pryč z výběru
     for (const id of this.selection) if (!this.game.get(id)) this.selection.delete(id);
     this.processEvents();
+    if (this.mode !== 'menu') this.sfx.updateMusic(this.paused || this.menuOpen === 'intro' ? 0 : this.musicIntensity());
     const sel = this.previewSel || this.selection;
     const scale = this.world.board.scale.x;
     this.world.update(dt, { selection: sel, hover: this.hover, barScale: this.xr ? Math.max(1, 0.03 / scale) * scale : 1, showBars: this.keys.has('Alt') });
